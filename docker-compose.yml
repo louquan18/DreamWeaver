@@ -1,0 +1,57 @@
+services:
+  # Python AI Service
+  python-ai:
+    build:
+      context: ./backend/python-ai
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://dreamweaver:dreamweaver@postgres:5432/dreamweaver
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=true
+    env_file:
+      - ./backend/python-ai/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/python-ai/src:/app/src  # hot reload in dev
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: dreamweaver
+      POSTGRES_USER: dreamweaver
+      POSTGRES_PASSWORD: dreamweaver
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dreamweaver"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
