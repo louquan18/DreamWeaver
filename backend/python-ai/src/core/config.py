@@ -29,17 +29,17 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # LLM / OpenRouter
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # LLM - OpenAI 兼容接口（支持小米 MiMo、OpenRouter、本地部署等）
+    llm_api_key: str = ""
+    llm_base_url: str = "https://openrouter.ai/api/v1"
 
-    # Default model for each agent type
-    model_planner: str = "anthropic/claude-sonnet-4-20250514"
-    model_writer: str = "anthropic/claude-sonnet-4-20250514"
-    model_consistency: str = "openai/gpt-4o-mini"
-    model_reviewer: str = "anthropic/claude-sonnet-4-20250514"
-    model_rewrite: str = "anthropic/claude-sonnet-4-20250514"
-    model_context: str = "openai/gpt-4o-mini"
+    # 各 Agent 默认模型 ID
+    model_planner: str = "mimo-7b"
+    model_writer: str = "mimo-7b"
+    model_consistency: str = "mimo-7b"
+    model_reviewer: str = "mimo-7b"
+    model_rewrite: str = "mimo-7b"
+    model_context: str = "mimo-7b"
 
     # Object Storage (OSS)
     oss_endpoint: str = ""
@@ -47,9 +47,9 @@ class Settings(BaseSettings):
     oss_secret_key: str = ""
     oss_bucket: str = "dreamweaver"
 
-    # Chroma
+    # Chroma (向量数据库)
     chroma_host: str = "localhost"
-    chroma_port: int = 8000
+    chroma_port: int = 8100
 
 
 @lru_cache

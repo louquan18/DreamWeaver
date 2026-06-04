@@ -1,7 +1,17 @@
-# Agent 实现
-# - context_agent.py   - 历史章节加载、人物状态提取
-# - planner_agent.py   - 章节规划、冲突设计
-# - writer_agent.py    - 草稿生成（流式输出）
-# - consistency_agent.py - 一致性检测
-# - reviewer_agent.py  - 质量评审
-# - rewrite_agent.py   - 重写优化
+"""Agent 节点实现"""
+
+from .context_agent import context_agent_node
+from .planner_agent import planner_agent_node
+from .writer_agent import writer_agent_node
+from .consistency_agent import consistency_agent_node
+from .reviewer_agent import reviewer_agent_node
+from .rewrite_agent import rewrite_agent_node
+
+__all__ = [
+    "context_agent_node",
+    "planner_agent_node",
+    "writer_agent_node",
+    "consistency_agent_node",
+    "reviewer_agent_node",
+    "rewrite_agent_node",
+]
