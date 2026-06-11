@@ -30,6 +30,7 @@ class ChapterResponse(BaseModel):
     story_id: uuid.UUID
     chapter_number: int
     title: Optional[str] = None
+    content: Optional[str] = None
     content_url: Optional[str] = None
     word_count: Optional[int] = None
     status: str

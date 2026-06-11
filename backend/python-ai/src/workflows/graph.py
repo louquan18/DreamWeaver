@@ -11,6 +11,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from loguru import logger
 
+from .state import NovelState
 from .nodes import (
     commit_node,
     consistency_agent_node,
@@ -32,15 +33,25 @@ def should_continue_to_review(
     """
     一致性检查后决定下一步
 
-    - 有未解决的一致性问题 → review
-    - 无问题 → commit
+    - 有 high 级别问题 → 必须 review
+    - 有 3+ 个问题 → review
+    - 否则 → commit
     """
     report = state.get("consistency_report", {})
     total_issues = report.get("total_issues", 0)
+    high_issues = report.get("high_issues", 0)
+
+    if high_issues > 0:
+        logger.info(f"[Router] {high_issues} high-severity issues → review")
+        return "review"
+
+    if total_issues >= 3:
+        logger.info(f"[Router] {total_issues} issues (>=3) → review")
+        return "review"
 
     if total_issues > 0:
-        logger.info(f"[Router] {total_issues} issues found → review")
-        return "review"
+        logger.info(f"[Router] {total_issues} minor issues → commit (acceptable)")
+        return "commit"
 
     logger.info("[Router] No issues → commit")
     return "commit"
@@ -75,18 +86,13 @@ def create_novel_workflow(checkpointer=None) -> Any:
     创建小说创作工作流
 
     Args:
-        checkpointer: Checkpoint 存储后端
-                      默认使用 MemorySaver（开发环境）
-                      生产环境传入 PostgresSaver
+        checkpointer: Checkpoint 存储后端，默认 MemorySaver
 
     Returns:
         编译后的 LangGraph 应用
     """
     if checkpointer is None:
         checkpointer = MemorySaver()
-
-    # 创建状态图
-    from .state import NovelState
 
     workflow = StateGraph(NovelState)
 
@@ -135,9 +141,7 @@ def create_novel_workflow(checkpointer=None) -> Any:
     # 提交后结束
     workflow.add_edge("commit", END)
 
-    # 编译工作流
     app = workflow.compile(checkpointer=checkpointer)
-
     logger.info("[Graph] Novel workflow compiled successfully")
     return app
 

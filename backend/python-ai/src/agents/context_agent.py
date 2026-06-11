@@ -25,7 +25,7 @@ async def context_agent_node(state: dict[str, Any]) -> dict[str, Any]:
     logger.info(f"[Context Agent] Loading context for story={story_id}")
 
     # 从记忆管理器组装上下文
-    context = memory_manager.assemble_context(
+    context = await memory_manager.assemble_context(
         story_id=story_id,
         recent_chapters=5,
     )

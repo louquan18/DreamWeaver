@@ -2,14 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install uv
-RUN pip install --no-cache-dir uv
+# Install uv (使用国内镜像源加速)
+RUN pip install --no-cache-dir uv -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # Copy dependency files first (for layer caching)
 COPY pyproject.toml ./
 
-# Install dependencies
-RUN uv pip install --system --no-cache .
+# Install dependencies (使用国内镜像源)
+RUN uv pip install --system --no-cache --index-url https://pypi.tuna.tsinghua.edu.cn/simple .
 
 # Copy source code
 COPY . .

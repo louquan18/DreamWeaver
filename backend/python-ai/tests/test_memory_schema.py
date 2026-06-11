@@ -3,6 +3,7 @@
 from src.memory.schema import (
     CharacterState,
     CompressionResult,
+    CultivationState,
     Foreshadow,
     NovelMemory,
     Relationship,
@@ -20,7 +21,9 @@ def test_timeline_event():
 def test_character_state():
     c = CharacterState(name="张三")
     assert c.name == "张三"
-    assert c.current_state == {}
+    assert isinstance(c.current_state, CultivationState)
+    assert c.current_state.cultivation_level == ""
+    assert c.current_state.health_status == "正常"
     assert c.relationships == {}
 
 
