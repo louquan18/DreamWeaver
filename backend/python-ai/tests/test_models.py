@@ -2,15 +2,7 @@
 
 import uuid
 
-from src.models import Chapter, Checkpoint, Story, StoryMemory
-
-
-def test_story_table_name():
-    assert Story.__tablename__ == "stories"
-
-
-def test_chapter_table_name():
-    assert Chapter.__tablename__ == "chapters"
+from src.models import Checkpoint, StoryMemory
 
 
 def test_story_memory_table_name():
@@ -19,29 +11,6 @@ def test_story_memory_table_name():
 
 def test_checkpoint_table_name():
     assert Checkpoint.__tablename__ == "checkpoints"
-
-
-def test_story_instance():
-    story = Story(
-        user_id=uuid.uuid4(),
-        title="Test Novel",
-        genre="xuanhuan",
-    )
-    assert story.title == "Test Novel"
-    assert story.genre == "xuanhuan"
-    # server_default applies at DB level; in-memory instance has None until flushed
-    assert story.status is None or story.status == "draft"
-
-
-def test_chapter_instance():
-    story_id = uuid.uuid4()
-    chapter = Chapter(
-        story_id=story_id,
-        chapter_number=1,
-        title="Chapter 1",
-    )
-    assert chapter.story_id == story_id
-    assert chapter.chapter_number == 1
 
 
 def test_story_memory_instance():

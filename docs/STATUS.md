@@ -88,7 +88,7 @@
 
 | 项 | 状态 | 说明与证据 |
 | --- | --- | --- |
-| Java 为唯一业务后端 | ⚠️ | 目标如此，但当前 **Python 仍持有完整 stories/chapters CRUD + repository**：`backend/python-ai/src/api/routes/stories.py`、`repositories/*`；Java 侧也有同名 entity/repository/service → **存在双写风险** |
+| Java 为唯一业务后端 | ✅（分支 `refactor/python-ai-worker-decouple`） | 已收敛：删除 Python 的 stories/chapters CRUD、story/chapter repository、写业务表的 `_ensure_story_exists` hack；Python 仅保留 AI 域表（story_memories/checkpoints，已去外键）。每张表单写入方，表级双写已根除。详见 [.docs/2606181644-python-ai-worker-decouple](../.docs/2606181644-python-ai-worker-decouple/plan.md)。残留：跨服务两段写时序偏差（记忆 vs 采用），MVP 接受 |
 | `chapter_generations` 表 | ✅（Java 侧） | Java entity 已存在：`backend/java-service/.../entity/ChapterGeneration.java`；但**架构文档第 5 节数据模型遗漏了该表**（见 [产品需求](./product/chapter-generation-requirements.md)） |
 | Java↔Python 内部 API（/internal/ai/...） | 🚧 | 产品文档已定义契约，落地状态以代码为准，尚未确认完整打通 |
 

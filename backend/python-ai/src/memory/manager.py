@@ -320,10 +320,9 @@ class MemoryManager:
             story_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, story_id)
 
         try:
-            # 确保 story 存在（外键约束要求）
-            await self._ensure_story_exists(story_uuid, story_id)
-
             # 查找已有记录，有则更新，无则创建
+            # 注: story 主数据由 Java 服务创建（生成任务触发前已存在）；
+            # 本服务只写自己的 story_memories，story_id 不再设外键，无需在此自动建 story。
             existing = await self._repo.get_latest_memory(story_uuid, memory_type)
             if existing:
                 await self._repo.update_memory(existing.id, content)
@@ -331,24 +330,6 @@ class MemoryManager:
                 await self._repo.save_memory(story_uuid, memory_type, content)
         except Exception as e:
             logger.warning(f"[Memory] DB save failed for {memory_type}: {e}")
-
-    async def _ensure_story_exists(self, story_uuid: uuid.UUID, story_id: str) -> None:
-        """确保 story 记录存在，不存在则自动创建"""
-        from sqlalchemy import select
-        from src.models.story import Story
-
-        db = self._repo.db
-        result = await db.execute(select(Story).where(Story.id == story_uuid))
-        if result.scalar_one_or_none() is None:
-            story = Story(
-                id=story_uuid,
-                user_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
-                title=f"Auto-created: {story_id[:50]}",
-                status="draft",
-            )
-            db.add(story)
-            await db.commit()
-            logger.info(f"[Memory] Auto-created story {story_uuid}")
 
     async def _load_from_db(self, story_id: str, memory_type: str) -> None:
         """从 PostgreSQL 加载到内存"""

@@ -8,9 +8,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# 导入所有模型，确保 Alembic 能检测到
+# 导入 AI 域模型，确保 Alembic 能检测到（业务表由 Java Flyway 管理）
 from src.core.database import Base
-from src.models import Story, Chapter, StoryMemory, Checkpoint  # noqa: F401
+from src.models import StoryMemory, Checkpoint  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

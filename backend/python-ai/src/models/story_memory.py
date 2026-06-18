@@ -3,16 +3,11 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import BaseModel
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .story import Story
 
 
 class StoryMemory(BaseModel):
@@ -23,13 +18,15 @@ class StoryMemory(BaseModel):
       - character   人物状态与关系
       - foreshadow  伏笔记录
       - world       世界观设定
+
+    注: story_id 为普通索引 UUID，不设外键。业务表 stories 由 Java 服务拥有，
+    本服务不与其建立跨服务外键约束，story_id 的合法性由调用方（Java）保证。
     """
 
     __tablename__ = "story_memories"
 
     story_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("stories.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -46,9 +43,6 @@ class StoryMemory(BaseModel):
         ARRAY(Integer),
         nullable=True,
     )
-
-    # Relationships
-    story: Mapped["Story"] = relationship(back_populates="memories")
 
     def __repr__(self) -> str:
         return f"<StoryMemory id={self.id} type={self.memory_type}>"
