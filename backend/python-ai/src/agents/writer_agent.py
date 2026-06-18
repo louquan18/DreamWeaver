@@ -1,11 +1,12 @@
-"""Writer Agent - Token 级流式输出（原生 MiMo API）"""
+"""Writer Agent - Token 级流式输出（OpenRouter 多模型 + fallback）"""
 
 import json
 from typing import Any
 
 from loguru import logger
 
-from src.models.mimo_client import mimo_stream
+from src.models.llm_client import llm_stream_with_fallback
+from src.models.provider import agent_model_chain, agent_temperature
 from src.workflows.token_buffer import push_done_sync, push_token_sync
 
 WRITER_SYSTEM_PROMPT = """你是一位优秀的网络小说作家，擅长写出引人入胜的长篇章节。
@@ -41,14 +42,16 @@ async def writer_agent_node(
     """
     Writer Agent 节点
 
-    使用原生 MiMo API 实现真正的 token 级流式输出。
+    通过 OpenRouter（OpenAI 兼容流式）实现 token 级流式输出，主模型失败自动 fallback。
     每个 content token 实时推送到 token_buffer。
     """
     thread_id = _get_thread_id(state, config)
     outline = state.get("chapter_outline", {})
     context = state.get("novel_context", {})
 
-    logger.info(f"[Writer Agent] Generating draft with native MiMo streaming: {thread_id}")
+    models = agent_model_chain("writer")
+    temperature = agent_temperature("writer")
+    logger.info(f"[Writer Agent] Streaming draft via {models} (thread={thread_id})")
 
     messages = [
         {"role": "system", "content": WRITER_SYSTEM_PROMPT},
@@ -63,7 +66,7 @@ async def writer_agent_node(
     try:
         draft = ""
         token_count = 0
-        async for token in mimo_stream(messages):
+        async for token in llm_stream_with_fallback(messages, models=models, temperature=temperature):
             draft += token
             push_token_sync(thread_id, token)
             token_count += 1

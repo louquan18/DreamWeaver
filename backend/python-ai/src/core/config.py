@@ -29,17 +29,31 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # LLM - OpenAI 兼容接口（支持小米 MiMo、OpenRouter、本地部署等）
+    # LLM - OpenRouter 多模型聚合（OpenAI 兼容接口）
+    # llm_api_key = OpenRouter API Key（一个 key 调所有模型）
+    # 也可指向其他 OpenAI 兼容网关/本地部署，改 llm_base_url 即可
     llm_api_key: str = ""
     llm_base_url: str = "https://openrouter.ai/api/v1"
 
-    # 各 Agent 默认模型 ID
-    model_planner: str = "mimo-7b"
-    model_writer: str = "mimo-7b"
-    model_consistency: str = "mimo-7b"
-    model_reviewer: str = "mimo-7b"
-    model_rewrite: str = "mimo-7b"
-    model_context: str = "mimo-7b"
+    # OpenRouter 推荐请求头（用于其用量归因/排行榜，可留空）
+    openrouter_referer: str = ""
+    openrouter_title: str = "DreamWeaver"
+
+    # ── 各 Agent 模型路由（混合策略，全部可用环境变量覆盖）──
+    # 主模型 + 失败时的 fallback 备用模型；slug 以 https://openrouter.ai/models 为准
+    # 规划/写作/评审/重写：质量优先；一致性/上下文抽取：低成本
+    model_planner: str = "anthropic/claude-3.5-sonnet"
+    model_planner_fallback: str = "openai/gpt-4o"
+    model_writer: str = "anthropic/claude-3.5-sonnet"
+    model_writer_fallback: str = "deepseek/deepseek-chat"
+    model_consistency: str = "openai/gpt-4o-mini"
+    model_consistency_fallback: str = "deepseek/deepseek-chat"
+    model_reviewer: str = "anthropic/claude-3.5-sonnet"
+    model_reviewer_fallback: str = "openai/gpt-4o"
+    model_rewrite: str = "anthropic/claude-3.5-sonnet"
+    model_rewrite_fallback: str = "openai/gpt-4o"
+    model_context: str = "deepseek/deepseek-chat"
+    model_context_fallback: str = "openai/gpt-4o-mini"
 
     # Object Storage (OSS)
     oss_endpoint: str = ""
