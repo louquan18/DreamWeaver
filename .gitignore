@@ -61,3 +61,7 @@ alembic.ini
 
 # Chroma
 chroma_data/
+
+#codex
+.agents
+AGENTS.md

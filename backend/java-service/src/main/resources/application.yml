@@ -1,0 +1,38 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: dreamweaver-java-service
+  mvc:
+    async:
+      # SSE 章节生成可能持续数分钟，禁用异步请求超时避免 Tomcat 误杀长连接（-1 = 不超时）
+      request-timeout: -1
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/dreamweaver}
+    username: ${SPRING_DATASOURCE_USERNAME:dreamweaver}
+    password: ${SPRING_DATASOURCE_PASSWORD:dreamweaver}
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+dreamweaver:
+  python-ai:
+    base-url: ${PYTHON_AI_BASE_URL:http://localhost:8000}

@@ -1,4 +1,4 @@
-"""章节生成 API + Token 级 SSE 流式输出"""
+"""Chapter generation API with token-level SSE streaming."""
 
 import asyncio
 import json
@@ -16,59 +16,51 @@ router = APIRouter(prefix="/api/ai/chapters", tags=["chapters"])
 
 @router.post("/generate")
 async def generate_chapter(
-    story_id: str = Query(..., description="小说 ID"),
-    chapter_id: str = Query(..., description="章节 ID"),
-    user_id: str = Query("", description="用户 ID"),
+    story_id: str = Query(..., description="Story ID"),
+    chapter_id: str = Query(..., description="Chapter ID"),
+    user_id: str = Query("", description="User ID"),
 ):
-    """生成章节（同步）"""
+    """Generate a chapter with the full workflow and return the final state."""
     state = create_initial_state(story_id, chapter_id, user_id)
     config = {"configurable": {"thread_id": f"{story_id}-{chapter_id}"}}
     final_state = await default_app.ainvoke(state, config)
+    draft = final_state.get("generated_draft", "")
     return {
         "story_id": story_id,
         "chapter_id": chapter_id,
-        "draft": final_state.get("generated_draft", ""),
-        "word_count": len(final_state.get("generated_draft", "")),
+        "draft": draft,
+        "word_count": len(draft),
         "execution_history": final_state.get("execution_history", []),
     }
 
 
 @router.get("/generate-stream")
 async def generate_chapter_stream(
-    story_id: str = Query(..., description="小说 ID"),
-    chapter_id: str = Query(..., description="章节 ID"),
-    user_id: str = Query("", description="用户 ID"),
+    story_id: str = Query(..., description="Story ID"),
+    chapter_id: str = Query(..., description="Chapter ID"),
+    user_id: str = Query("", description="User ID"),
+    generation_id: str | None = Query(None, description="Java generation ID"),
 ):
-    """
-    生成章节（Token 级 SSE 流式输出）
+    """Generate a chapter draft and stream tokens to Java.
 
-    工作流在线程池中运行，SSE 端点在主事件循环中读取 token 流。
+    MVP boundary: Java owns generation records and chapter content. This Python
+    SSE endpoint returns as soon as the draft token stream completes, instead of
+    waiting for slower downstream workflow nodes.
     """
 
     async def event_stream():
-        thread_id = f"{story_id}-{chapter_id}"
+        thread_id = generation_id or f"{story_id}-{chapter_id}"
         state = create_initial_state(story_id, chapter_id, user_id)
+        # 把 SSE token buffer 的 key 显式传入 state，确保 writer 写端与此处读端使用同一 key
+        state["metadata"] = {**state.get("metadata", {}), "sse_thread_id": thread_id}
         config = {"configurable": {"thread_id": thread_id}}
 
-        node_progress = {
-            "load_runtime_context": 5,
-            "novel_context": 15,
-            "plan_chapter": 30,
-            "generate_draft": 50,
-            "check_consistency": 70,
-            "review": 80,
-            "rewrite": 85,
-            "commit": 100,
-        }
-
-        # 发送前置节点事件
         yield _sse("node_start", {"node": "load_runtime_context", "progress": 5})
         yield _sse("node_end", {"node": "load_runtime_context", "progress": 5})
         yield _sse("node_start", {"node": "novel_context", "progress": 15})
         yield _sse("node_end", {"node": "novel_context", "progress": 15})
         yield _sse("node_start", {"node": "plan_chapter", "progress": 30})
 
-        # 工作流在线程池中运行（不阻塞事件循环）
         loop = asyncio.get_event_loop()
         workflow_future = loop.run_in_executor(
             None,
@@ -80,106 +72,70 @@ async def generate_chapter_stream(
         yield _sse("node_end", {"node": "plan_chapter", "progress": 30})
         yield _sse("node_start", {"node": "generate_draft", "progress": 50})
 
-        # 轮询读取 token（线程安全的非阻塞读取）
         token_count = 0
-        done = False
-        while not done:
-            # 读取所有已缓冲的 tokens
-            tokens, stream_done = read_tokens_with_done_sync(thread_id)
+        draft_parts: list[str] = []
+        stream_done = False
+
+        # 心跳：planner 等慢节点期间可能数十秒无 token，需周期性发字节
+        # 防止 nginx proxy_read_timeout / 代理空闲超时掐断 SSE 连接
+        idle_cycles = 0
+        heartbeat_cycles = 200  # 200 * 0.05s ≈ 10s
+
+        while not stream_done:
+            tokens, token_stream_done = read_tokens_with_done_sync(thread_id)
             for token in tokens:
-                yield _sse("token", {"content": token})
+                draft_parts.append(token)
                 token_count += 1
+                yield _sse("token", {"content": token})
 
-            if stream_done:
-                done = True
+            if tokens:
+                idle_cycles = 0
 
-            # 检查工作流是否完成且 buffer 已空
+            if token_stream_done:
+                stream_done = True
+                break
+
             if workflow_future.done() and not tokens:
-                # 再读一次确保没有遗漏
-                tokens, _ = read_tokens_with_done_sync(thread_id)
+                tokens, token_stream_done = read_tokens_with_done_sync(thread_id)
                 for token in tokens:
-                    yield _sse("token", {"content": token})
+                    draft_parts.append(token)
                     token_count += 1
-                done = True
+                    yield _sse("token", {"content": token})
 
-            if not done:
-                await asyncio.sleep(0.05)  # 50ms 轮询间隔
+                if workflow_future.exception() is not None and not draft_parts:
+                    exc = workflow_future.exception()
+                    logger.error(f"[SSE] Workflow failed before streaming draft: {exc}")
+                    yield _sse("error", {"message": str(exc)})
+                    cleanup_buffer(thread_id)
+                    return
 
+                stream_done = True
+                break
+
+            idle_cycles += 1
+            if idle_cycles >= heartbeat_cycles:
+                idle_cycles = 0
+                yield ": keepalive\n\n"
+
+            await asyncio.sleep(0.05)
+
+        final_draft = "".join(draft_parts)
         yield _sse("node_end", {"node": "generate_draft", "progress": 50})
+        yield _sse(
+            "done",
+            {
+                "story_id": story_id,
+                "chapter_id": chapter_id,
+                "saved_chapter_id": None,
+                "draft": final_draft,
+                "word_count": len(final_draft),
+                "tokens_streamed": token_count,
+            },
+        )
 
-        # 等待工作流完成
-        try:
-            final_state = await workflow_future
-        except Exception as e:
-            logger.error(f"[SSE] Workflow error: {e}")
-            yield _sse("error", {"message": str(e)})
-            cleanup_buffer(thread_id)
-            return
-
-        execution_history = final_state.get("execution_history", [])
-
-        # 发送后续节点事件
-        for node_name in ["check_consistency", "review", "rewrite", "commit"]:
-            if node_name in execution_history:
-                progress = node_progress.get(node_name, 0)
-                yield _sse("node_start", {"node": node_name, "progress": progress})
-                yield _sse("node_end", {"node": node_name, "progress": progress})
-
-        # 保存章节到数据库
-        final_draft = final_state.get("generated_draft", "")
-        saved_chapter_id = None
-        try:
-            from src.core.database import async_session_factory
-            from src.repositories.chapter_repository import ChapterRepository
-            from src.repositories.story_repository import StoryRepository
-            from src.schemas.chapter import ChapterCreate
-
-            async with async_session_factory() as db:
-                chapter_repo = ChapterRepository(db)
-                story_repo = StoryRepository(db)
-
-                # 确保 story 存在
-                import uuid as uuid_mod
-                story_uuid = uuid_mod.UUID(story_id) if "-" in story_id else uuid_mod.uuid5(uuid_mod.NAMESPACE_DNS, story_id)
-                story = await story_repo.get_by_id(story_uuid)
-                if not story:
-                    from src.schemas.story import StoryCreate
-                    story = await story_repo.create(
-                        StoryCreate(title=f"Story {story_id[:8]}"),
-                        user_id=uuid_mod.UUID("00000000-0000-0000-0000-000000000001"),
-                    )
-
-                # 保存章节
-                chapter_data = ChapterCreate(
-                    chapter_number=1,  # TODO: 从 state 获取
-                    title=f"Chapter {chapter_id[:8]}",
-                )
-                chapter = await chapter_repo.create(chapter_data, story.id)
-                # 更新内容
-                await chapter_repo.update(chapter.id, type("U", (), {
-                    "model_dump": lambda self, **kw: {
-                        "content": final_draft,
-                        "word_count": len(final_draft),
-                        "status": "completed",
-                    },
-                    "model_dump_json": lambda self, **kw: "{}",
-                })())
-                saved_chapter_id = str(chapter.id)
-                logger.info(f"[SSE] Chapter saved: {saved_chapter_id}")
-        except Exception as e:
-            logger.warning(f"[SSE] Failed to save chapter: {e}")
-
-        # 完成
-        yield _sse("done", {
-            "story_id": story_id,
-            "chapter_id": chapter_id,
-            "saved_chapter_id": saved_chapter_id,
-            "draft": final_draft,
-            "word_count": len(final_draft),
-            "tokens_streamed": token_count,
-        })
-
-        cleanup_buffer(thread_id)
+        workflow_future.add_done_callback(
+            lambda future: _log_background_workflow_result(future, thread_id)
+        )
 
     return StreamingResponse(
         event_stream(),
@@ -193,10 +149,20 @@ async def generate_chapter_stream(
 
 
 def _run_workflow_sync(state: dict, config: dict) -> dict:
-    """在线程池中运行工作流（同步包装）"""
+    """Run the workflow inside the executor thread."""
     return asyncio.run(default_app.ainvoke(state, config))
 
 
+def _log_background_workflow_result(future: asyncio.Future, thread_id: str) -> None:
+    """Observe background workflow failures and release the token buffer."""
+    try:
+        future.result()
+    except Exception as exc:
+        logger.warning(f"[SSE] Background workflow failed after draft stream: {exc}")
+    finally:
+        cleanup_buffer(thread_id)
+
+
 def _sse(event: str, data: dict[str, Any]) -> str:
-    """格式化 SSE 事件"""
+    """Format one SSE event."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"

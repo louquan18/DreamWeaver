@@ -85,6 +85,13 @@ async def writer_agent_node(
 
 
 def _get_thread_id(state: dict[str, Any], config: dict[str, Any] | None) -> str:
+    # 最优先：SSE 端通过 state.metadata 显式下发的 buffer key（= generation_id）
+    metadata = state.get("metadata") or {}
+    sse_thread_id = metadata.get("sse_thread_id")
+    if sse_thread_id:
+        return str(sse_thread_id)
+
+    # 兼容：LangGraph config 注入的 thread_id
     configured_thread_id = (config or {}).get("configurable", {}).get("thread_id")
     if configured_thread_id:
         return str(configured_thread_id)

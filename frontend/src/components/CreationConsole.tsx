@@ -1,12 +1,14 @@
-// 创作控制台 - 输入小说 ID 和章节 ID，启动生成
-
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { createChapter, createStory, listChapters, listStories } from '../services/api'
+import type { Chapter, Story } from '../types'
 import './CreationConsole.css'
 
 interface CreationConsoleProps {
   onGenerate: (storyId: string, chapterId: string) => void
   onCancel: () => void
   onReset: () => void
+  onSelectionChange: (story: Story | null, chapter: Chapter | null) => void
+  refreshKey: number
   status: 'idle' | 'connecting' | 'generating' | 'done' | 'error'
   errorMessage: string
 }
@@ -15,76 +17,298 @@ export function CreationConsole({
   onGenerate,
   onCancel,
   onReset,
+  onSelectionChange,
+  refreshKey,
   status,
   errorMessage,
 }: CreationConsoleProps) {
-  const [storyId, setStoryId] = useState('demo-story')
-  const [chapterId, setChapterId] = useState('chapter-1')
+  const [stories, setStories] = useState<Story[]>([])
+  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [selectedStoryId, setSelectedStoryId] = useState('')
+  const [selectedChapterId, setSelectedChapterId] = useState('')
+  const [storyTitle, setStoryTitle] = useState('')
+  const [storyGenre, setStoryGenre] = useState('')
+  const [storyDescription, setStoryDescription] = useState('')
+  const [chapterNumber, setChapterNumber] = useState(1)
+  const [chapterTitle, setChapterTitle] = useState('')
+  const [panelError, setPanelError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const isRunning = status === 'connecting' || status === 'generating'
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!isRunning && storyId && chapterId) {
-      onGenerate(storyId, chapterId)
+  const selectedStory = useMemo(
+    () => stories.find((story) => story.id === selectedStoryId) || null,
+    [stories, selectedStoryId],
+  )
+
+  const selectedChapter = useMemo(
+    () => chapters.find((chapter) => chapter.id === selectedChapterId) || null,
+    [chapters, selectedChapterId],
+  )
+
+  const refreshStories = useCallback(async () => {
+    try {
+      const data = await listStories()
+      setStories(data)
+      if (!selectedStoryId && data.length > 0) {
+        setSelectedStoryId(data[0].id)
+      }
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : 'Failed to load stories')
+    } finally {
+      setLoading(false)
     }
+  }, [selectedStoryId])
+
+  const refreshChapters = useCallback(async (storyId: string) => {
+    try {
+      const data = await listChapters(storyId)
+      setChapters(data)
+      setSelectedChapterId((current) => {
+        if (data.some((chapter) => chapter.id === current)) return current
+        return data[0]?.id || ''
+      })
+      const nextNumber = Math.max(0, ...data.map((chapter) => getChapterNumber(chapter))) + 1
+      setChapterNumber(nextNumber)
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : 'Failed to load chapters')
+      setChapters([])
+      setSelectedChapterId('')
+    }
+  }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshStories()
+  }, [refreshStories])
+
+  useEffect(() => {
+    if (selectedStoryId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void refreshChapters(selectedStoryId)
+    }
+  }, [refreshChapters, refreshKey, selectedStoryId])
+
+  useEffect(() => {
+    onSelectionChange(selectedStory, selectedChapter)
+  }, [onSelectionChange, selectedStory, selectedChapter])
+
+  async function handleCreateStory(e: FormEvent) {
+    e.preventDefault()
+    if (!storyTitle.trim()) return
+
+    setLoading(true)
+    setPanelError('')
+    try {
+      const story = await createStory({
+        title: storyTitle.trim(),
+        genre: storyGenre.trim() || undefined,
+        description: storyDescription.trim() || undefined,
+      })
+      setStories((prev) => [story, ...prev])
+      setSelectedStoryId(story.id)
+      setStoryTitle('')
+      setStoryGenre('')
+      setStoryDescription('')
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : 'Failed to create story')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleCreateChapter(e: FormEvent) {
+    e.preventDefault()
+    if (!selectedStoryId || chapterNumber < 1) return
+
+    setLoading(true)
+    setPanelError('')
+    try {
+      const chapter = await createChapter(selectedStoryId, {
+        chapterNumber,
+        title: chapterTitle.trim() || undefined,
+      })
+      setChapters((prev) => [...prev, chapter].sort(compareChapters))
+      setSelectedChapterId(chapter.id)
+      setChapterTitle('')
+      setChapterNumber((prev) => prev + 1)
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : 'Failed to create chapter')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleGenerate() {
+    if (!isRunning && selectedStoryId && selectedChapterId) {
+      onGenerate(selectedStoryId, selectedChapterId)
+    }
+  }
+
+  function handleStorySelect(storyId: string) {
+    setPanelError('')
+    setSelectedStoryId(storyId)
+    setChapters([])
+    setSelectedChapterId('')
+  }
+
+  function handleChapterSelect(chapterId: string) {
+    setPanelError('')
+    setSelectedChapterId(chapterId)
   }
 
   return (
     <div className="creation-console">
-      <h2>🌌 DreamWeaver 创作控制台</h2>
-      <p className="subtitle">Multi-Agent 长篇小说创作系统</p>
+      <div className="console-header">
+        <h2>Creation Console</h2>
+        <span>{loading ? 'Syncing' : 'Ready'}</span>
+      </div>
 
-      <form onSubmit={handleSubmit}>
-        <div className="form-row">
+      <form className="console-section" onSubmit={handleCreateStory}>
+        <div className="section-title">Novel</div>
+        <label>
+          <span>Create novel</span>
+          <input
+            type="text"
+            value={storyTitle}
+            onChange={(e) => setStoryTitle(e.target.value)}
+            placeholder="Title"
+            disabled={isRunning || loading}
+          />
+        </label>
+        <div className="split-row">
+          <input
+            type="text"
+            value={storyGenre}
+            onChange={(e) => setStoryGenre(e.target.value)}
+            placeholder="Genre"
+            disabled={isRunning || loading}
+          />
+          <button type="submit" disabled={isRunning || loading || !storyTitle.trim()}>
+            Create
+          </button>
+        </div>
+        <textarea
+          value={storyDescription}
+          onChange={(e) => setStoryDescription(e.target.value)}
+          placeholder="Brief description"
+          disabled={isRunning || loading}
+          rows={3}
+        />
+
+        <label>
+          <span>Select novel</span>
+          <select
+            value={selectedStoryId}
+            onChange={(e) => handleStorySelect(e.target.value)}
+            disabled={isRunning || loading || stories.length === 0}
+          >
+            <option value="">No novel selected</option>
+            {stories.map((story) => (
+              <option key={story.id} value={story.id}>
+                {story.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      </form>
+
+      <form className="console-section" onSubmit={handleCreateChapter}>
+        <div className="section-title">Chapter</div>
+        <div className="split-row">
           <label>
-            <span>📚 小说 ID</span>
+            <span>No.</span>
             <input
-              type="text"
-              value={storyId}
-              onChange={(e) => setStoryId(e.target.value)}
-              placeholder="story-001"
-              disabled={isRunning}
+              type="number"
+              min={1}
+              value={chapterNumber}
+              onChange={(e) => setChapterNumber(Number(e.target.value))}
+              disabled={isRunning || loading || !selectedStoryId}
             />
           </label>
           <label>
-            <span>📖 章节 ID</span>
+            <span>Title</span>
             <input
               type="text"
-              value={chapterId}
-              onChange={(e) => setChapterId(e.target.value)}
-              placeholder="chapter-1"
-              disabled={isRunning}
+              value={chapterTitle}
+              onChange={(e) => setChapterTitle(e.target.value)}
+              placeholder="Chapter title"
+              disabled={isRunning || loading || !selectedStoryId}
             />
           </label>
         </div>
+        <button type="submit" disabled={isRunning || loading || !selectedStoryId}>
+          Create chapter
+        </button>
 
-        <div className="button-group">
-          {!isRunning ? (
-            <button type="submit" className="btn-primary">
-              🚀 开始生成
-            </button>
+        <div className="chapter-list" aria-label="Chapter list">
+          {chapters.length === 0 ? (
+            <div className="empty-list">No chapters yet</div>
           ) : (
-            <button type="button" className="btn-danger" onClick={onCancel}>
-              ⏹ 停止
-            </button>
-          )}
-
-          {status !== 'idle' && !isRunning && (
-            <button type="button" className="btn-secondary" onClick={onReset}>
-              🔄 重置
-            </button>
+            chapters.map((chapter) => (
+              <button
+                type="button"
+                key={chapter.id}
+                className={`chapter-row ${chapter.id === selectedChapterId ? 'selected' : ''}`}
+                onClick={() => handleChapterSelect(chapter.id)}
+                aria-pressed={chapter.id === selectedChapterId}
+              >
+                <span className="chapter-main">
+                  <strong>#{getChapterNumber(chapter)}</strong>
+                  {chapter.title || 'Untitled'}
+                </span>
+                <span className="chapter-meta">
+                  {chapter.status}
+                  {' · '}
+                  {getWordCount(chapter).toLocaleString()} chars
+                  {' · '}
+                  {chapter.content ? 'has text' : 'empty'}
+                </span>
+              </button>
+            ))
           )}
         </div>
       </form>
 
-      {status === 'done' && (
-        <div className="status-message success">✅ 章节生成完成！</div>
-      )}
+      <div className="generate-bar">
+        {!isRunning ? (
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleGenerate}
+            disabled={!selectedStoryId || !selectedChapterId}
+          >
+            Generate selected chapter
+          </button>
+        ) : (
+          <button type="button" className="btn-danger" onClick={onCancel}>
+            Stop
+          </button>
+        )}
 
-      {status === 'error' && (
-        <div className="status-message error">❌ {errorMessage}</div>
+        {status !== 'idle' && !isRunning && (
+          <button type="button" className="btn-secondary" onClick={onReset}>
+            Reset
+          </button>
+        )}
+      </div>
+
+      {(panelError || errorMessage) && (
+        <div className="status-message error">{panelError || errorMessage}</div>
       )}
+      {status === 'done' && <div className="status-message success">Generation complete</div>}
     </div>
   )
+}
+
+function compareChapters(a: Chapter, b: Chapter) {
+  return getChapterNumber(a) - getChapterNumber(b)
+}
+
+function getChapterNumber(chapter: Chapter) {
+  return chapter.chapterNumber ?? chapter.chapter_number ?? 0
+}
+
+function getWordCount(chapter: Chapter) {
+  return chapter.wordCount ?? chapter.word_count ?? 0
 }

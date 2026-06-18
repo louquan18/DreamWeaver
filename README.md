@@ -336,6 +336,7 @@ curl -X POST \
 ## 文档
 
 - [产品需求文档 (PRD)](./docs/PRD.md)
+- [需求确认与后端边界](./docs/product/requirements-confirmation.md)
 - [系统架构设计](./docs/architecture/system-architecture.md)
 - [技术选型总结](./docs/architecture/tech-stack.md)
 - [架构决策记录 (ADR)](./docs/architecture/adr/)

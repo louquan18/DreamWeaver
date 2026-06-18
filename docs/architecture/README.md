@@ -1,6 +1,8 @@
 # DreamWeaver 架构文档
 
-本目录包含 DreamWeaver 项目的完整架构设计文档。
+本目录包含 DreamWeaver 项目的完整架构设计文档（描述**目标架构**）。
+
+> ⚠️ 各能力是否已实现，以 [实现状态总表 STATUS.md](../STATUS.md) 为唯一权威。本目录文档涉及实现进度处均应引用该表。
 
 ## 文档列表
 
@@ -100,7 +102,7 @@ Novel Memory
 | Java 服务 | Spring Boot | 用户管理、审计日志 |
 | Python AI | FastAPI + LangGraph | Agent 工作流引擎 |
 | AI 编排 | LangGraph | Multi-Agent 编排 |
-| 模型聚合 | OpenRouter | 100+ 模型统一接口 |
+| 模型聚合 | OpenAI 兼容接口（目标 OpenRouter） | 目标 100+ 模型；**当前实际仅接入 MiMo 单模型** |
 | 数据库 | PostgreSQL | 主数据库 |
 | 缓存 | Redis | 会话、状态缓存 |
 | 存储 | OSS | 章节内容存储 |
@@ -139,6 +141,7 @@ Novel Memory
 
 ## 相关资源
 
+- [实现状态总表 STATUS.md](../STATUS.md) ← 判断"是否已实现"的唯一权威
 - [PRD 产品需求文档](../PRD.md)
 - [项目主文档](../../.claude/CLAUDE.md)
 - [开发 Skills](../../.claude/skills/)

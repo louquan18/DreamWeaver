@@ -1,9 +1,11 @@
 # DreamWeaver 系统架构设计文档
 
-**版本**: v1.0  
-**日期**: 2026-06-04  
+**版本**: v1.1（2026-06-17 校订）  
+**日期**: 2026-06-04（初版） / 2026-06-17（校订）  
 **作者**: System Architect  
-**状态**: Draft
+**状态**: Draft（目标设计）
+
+> ⚠️ 本文档描述**目标架构**。各能力是否已实现，以 [实现状态总表 STATUS.md](../STATUS.md) 为唯一权威；本文涉及实现进度处均已标注指向。SSE 事件契约与 State Schema 以 Python 代码为权威源。
 
 ---
 
@@ -241,23 +243,26 @@ python-ai/
                     │
             ┌───────┴────────┐
             │                │
-            ▼                ▼
+     (有问题)          (无问题直接提交)
+            ▼                │
+    ┌────────────┐          │
+    │   review   │          │
+    └──────┬─────┘          │
+      分数低│ │分数高         │
+           │ └───────────────┤
+           ▼                 ▼
     ┌────────────┐    ┌───────────┐
-    │   review   │    │  commit   │  (无问题直接提交)
+    │  rewrite   │    │  commit   │
     └──────┬─────┘    └─────┬─────┘
            │                │
-           ▼                │
-    ┌────────────┐          │
-    │  rewrite   │          │
-    └──────┬─────┘          │
-           │                │
-           └────────┬───────┘
-                    │
-                    ▼
-                   END
+           └──► review       ▼
+        （rewrite 后回到     END
+          review，循环）
 ```
 
 ### 3.2 State Schema
+
+> 权威源：以 `backend/python-ai/src/workflows/state.py` 为准。下方为目标示意，**注意当前代码中并无 `checkpoint_id` 字段**（详见 [STATUS.md](../STATUS.md) 第 3 节）。
 
 ```python
 from typing import TypedDict, Optional, List, Dict, Any
@@ -438,6 +443,8 @@ class NovelState(TypedDict, total=False):
 
 ### 4.3 Checkpoint 恢复机制
 
+> ❌ **现状（2026-06-17）**：尚未实现。代码当前使用 `MemorySaver()`（内存态，进程重启即丢失），`checkpoint/` 目录为空，下述 PostgreSQL 持久化与 <10s 恢复均为目标，未落地。详见 [STATUS.md](../STATUS.md) 第 4 节、[ADR-003](./adr/ADR-003-checkpoint.md)。
+
 #### Checkpoint 数据结构
 
 ```python
@@ -478,6 +485,8 @@ class NovelState(TypedDict, total=False):
 - 恢复时间: < 10s
 
 ### 4.4 多模型适配层
+
+> 🚧 **现状（2026-06-17）**：已有"按 Agent 选模型 + 温度"的机制（`models/provider.py`），但六个 Agent 当前**全部配置为 `mimo-7b` 单一模型**（`core/config.py`），无独立 `router.py`、无按任务切换、无自动 Fallback。下表为目标路由策略。详见 [STATUS.md](../STATUS.md) 第 5 节、[ADR-004](./adr/ADR-004-multi-model-routing.md)。
 
 #### Provider 抽象
 
@@ -593,6 +602,8 @@ CREATE TABLE checkpoints (
 CREATE INDEX idx_checkpoints_execution ON checkpoints(execution_id);
 ```
 
+> 📌 **补充（2026-06-17）**：本节遗漏了 `chapter_generations` 表与 `chapters.last_generation_id` / `chapters.content` 字段——它们是"生成历史/采用版本"闭环的核心，定义见 [章节生成需求与表设计](../product/chapter-generation-requirements.md)，并已在 Java 侧落地（`entity/ChapterGeneration.java`）。后续应将其完整 DDL 并入本节。
+
 ### 5.2 缓存策略
 
 **Redis Key 设计**:
@@ -641,6 +652,8 @@ POST   /api/ai/chapters/{id}/resume   从 Checkpoint 恢复
 ```
 
 ### 6.2 SSE 流式输出
+
+> 权威源：SSE 事件契约以 `backend/python-ai/src/api/routes/chapters.py` 为准（详见 [STATUS.md](../STATUS.md) 第 2 节）。实际事件：`token` / `node_start` / `node_end` / `done` / `error`。**注意**：`node_start/node_end` 与进度值当前为硬编码顺序发出，并非真实节点驱动；无独立 `progress` 事件。下方为目标格式示意。
 
 **连接建立**:
 ```
@@ -711,7 +724,15 @@ services:
   
   redis:
     image: redis:7-alpine
+
+  # 向量库：代码依赖 Chroma（memory/vector_store.py + chroma_* 配置）
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8100:8000"
 ```
+
+> 📌 **说明（2026-06-17）**：本节 compose 为简化示意。根目录实际的 `docker-compose.yml` 已完整编排 `chroma`（含持久化卷）以及 `frontend`、healthcheck 等，请以根目录文件为部署依据。
 
 ### 7.2 扩展方案
 
@@ -747,10 +768,12 @@ services:
 
 ### 8.3 安全性
 
-- 认证: JWT Token
-- 授权: RBAC（Role-Based Access Control）
-- 数据加密: HTTPS + 数据库加密
-- API 限流: 100 req/min per user
+> ❌ **现状（2026-06-17）**：下列安全能力**均未实现**。Java `security/`、`audit/` 包仅有空 `package-info.java`，`user_id` 当前可空/模拟。本节为目标设计，请勿据此判断系统已有安全防护。详见 [STATUS.md](../STATUS.md) 第 7 节。
+
+- 认证: JWT Token（📋 未实现）
+- 授权: RBAC（Role-Based Access Control）（📋 未实现）
+- 数据加密: HTTPS + 数据库加密（📋 未实现）
+- API 限流: 100 req/min per user（📋 未实现）
 
 ---
 

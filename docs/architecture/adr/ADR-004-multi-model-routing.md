@@ -618,8 +618,20 @@ async def track_llm_call(
 
 ---
 
+## 现状更新（Status Update · 2026-06-17）
+
+> 本节为事实校正，不修改上方原始决策记录。
+
+- **决策方向不变**：仍计划走 OpenAI 兼容接口聚合（OpenRouter / 本地部署等）。
+- **实际现状**：当前实际接入的是**小米 MiMo 单一模型**，六个 Agent 在 `backend/python-ai/src/core/config.py:37-42` 全部配置为 `mimo-7b`；`models/provider.py` 提供"按 Agent 选模型 + 温度"机制，但无独立 `router.py`、无多 Provider 路由、无自动 Fallback。
+- **校正"验证标准"**：上文「验证标准」中被勾选为 `[x]` 的两项（"支持 5+ 模型供应商""统一调用接口"）——统一 OpenAI 接口成立，但"5+ 供应商路由"**当前未实现**；下方成本估算表为规划假设，非实测。
+- 权威状态见 [STATUS.md](../../STATUS.md) 第 5 节。
+
+---
+
 ## 更新历史（Update History）
 
 | 日期 | 修改内容 | 修改人 |
 |------|----------|--------|
 | 2026-06-04 | 初始版本 | System Architect |
+| 2026-06-17 | 追加"现状更新"小节，校正单模型现状与误标完成项 | louquan |

@@ -1,6 +1,4 @@
-// SSE Hook - 管理流式生成状态
-
-import { useState, useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { generateChapterStream } from '../services/api'
 import type { GenerateRequest } from '../types'
 
@@ -11,6 +9,8 @@ export interface WorkflowState {
   draft: string
   executionHistory: string[]
   errorMessage: string
+  generationId: string
+  completionSeq: number
 }
 
 const NODE_PROGRESS: Record<string, number> = {
@@ -32,22 +32,31 @@ export function useSSE() {
     draft: '',
     executionHistory: [],
     errorMessage: '',
+    generationId: '',
+    completionSeq: 0,
   })
 
-  const eventSourceRef = useRef<EventSource | null>(null)
+  const eventSourceRef = useRef<{ close: () => void } | null>(null)
 
   const startGeneration = useCallback((req: GenerateRequest) => {
-    // 重置状态
-    setState({
+    setState((prev) => ({
+      ...prev,
       status: 'connecting',
       currentNode: '',
       progress: 0,
       draft: '',
       executionHistory: [],
       errorMessage: '',
-    })
+      generationId: '',
+    }))
 
-    const es = generateChapterStream(req, {
+    eventSourceRef.current = generateChapterStream(req, {
+      onCreated: (generation) => {
+        setState((prev) => ({
+          ...prev,
+          generationId: generation.id,
+        }))
+      },
       onToken: (content) => {
         setState((prev) => ({
           ...prev,
@@ -62,7 +71,7 @@ export function useSSE() {
           progress: progress || NODE_PROGRESS[node] || prev.progress,
         }))
       },
-      onNodeEnd: (node, _progress) => {
+      onNodeEnd: (node) => {
         setState((prev) => ({
           ...prev,
           executionHistory: [...prev.executionHistory, node],
@@ -73,8 +82,8 @@ export function useSSE() {
           ...prev,
           status: 'done',
           progress: 100,
-          // 兜底：如果 token 流没有内容，用 done 事件里的 draft
           draft: prev.draft || data.draft || '',
+          completionSeq: prev.completionSeq + 1,
         }))
       },
       onError: (message) => {
@@ -82,11 +91,10 @@ export function useSSE() {
           ...prev,
           status: 'error',
           errorMessage: message,
+          completionSeq: prev.completionSeq + 1,
         }))
       },
     })
-
-    eventSourceRef.current = es
   }, [])
 
   const cancel = useCallback(() => {
@@ -103,6 +111,8 @@ export function useSSE() {
       draft: '',
       executionHistory: [],
       errorMessage: '',
+      generationId: '',
+      completionSeq: 0,
     })
   }, [])
 

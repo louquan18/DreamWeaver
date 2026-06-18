@@ -473,8 +473,21 @@ async def cleanup_old_checkpoints():
 
 ---
 
+## 现状更新（Status Update · 2026-06-17）
+
+> 本节为事实校正，不修改上方原始决策记录。
+
+- **决策方向不变**：仍计划采用 LangGraph Checkpoint（方案 3）。
+- **实际尚未落地**：代码当前使用 `MemorySaver()`（内存态），`backend/python-ai/src/workflows/graph.py:95`；`backend/python-ai/src/checkpoint/` 仅含空 `__init__.py`，PostgresSaver 未接线。
+- **影响**：MemorySaver 在进程重启后丢失全部状态，因此本 ADR"背景"中列出的"服务重启可恢复"场景**目前不成立**。
+- **校正"验证标准"**：上文「验证标准」中被勾选为 `[x]` 的两项（"每个节点执行后自动保存 Checkpoint""中断后可从最新 Checkpoint 恢复"）**实为目标，当前未实现**，不应视为已完成。
+- 权威状态见 [STATUS.md](../../STATUS.md) 第 4 节。
+
+---
+
 ## 更新历史（Update History）
 
 | 日期 | 修改内容 | 修改人 |
 |------|----------|--------|
 | 2026-06-04 | 初始版本 | System Architect |
+| 2026-06-17 | 追加"现状更新"小节，校正未落地与误标完成项 | louquan |
