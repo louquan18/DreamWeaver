@@ -1,6 +1,11 @@
 package com.dreamweaver.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
 import java.util.Map;
@@ -8,8 +13,14 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.ChapterGeneration;
+import com.dreamweaver.entity.ChapterStatus;
+import com.dreamweaver.entity.ChapterWorkflowStage;
+import com.dreamweaver.service.BadRequestException;
 import com.dreamweaver.service.ChapterGenerationService;
 import com.dreamweaver.service.ChapterService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,6 +52,69 @@ class ChapterGenerationControllerTests {
         assertThat(payload.get("confirmedOutline"))
             .isEqualTo(Map.of("finalOutline", Map.of("endingHook", "The mirror speaks.")));
         assertThat(payload.get("recentChapters")).asList().hasSize(1);
+    }
+
+    @Test
+    void confirmDraftReturnsDraftConfirmedChapter() throws Exception {
+        ChapterGenerationService generationService = Mockito.mock(ChapterGenerationService.class);
+        MockMvc mockMvc = mockMvc(generationService);
+        when(generationService.confirmDraft(eq(STORY_ID), eq(CHAPTER_ID), eq(GENERATION_ID)))
+            .thenReturn(confirmedChapter());
+
+        mockMvc.perform(post(
+                    "/api/stories/{storyId}/chapters/{chapterId}/generations/{generationId}/confirm",
+                    STORY_ID,
+                    CHAPTER_ID,
+                    GENERATION_ID
+                ))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(CHAPTER_ID.toString()))
+            .andExpect(jsonPath("$.status").value("approved"))
+            .andExpect(jsonPath("$.workflowStage").value("draft_confirmed"))
+            .andExpect(jsonPath("$.lastGenerationId").value(GENERATION_ID.toString()));
+    }
+
+    @Test
+    void confirmDraftMapsBusinessValidationErrors() throws Exception {
+        ChapterGenerationService generationService = Mockito.mock(ChapterGenerationService.class);
+        MockMvc mockMvc = mockMvc(generationService);
+        when(generationService.confirmDraft(eq(STORY_ID), eq(CHAPTER_ID), eq(GENERATION_ID)))
+            .thenThrow(new BadRequestException("generation_not_succeeded", "Only succeeded generation can be confirmed"));
+
+        mockMvc.perform(post(
+                    "/api/stories/{storyId}/chapters/{chapterId}/generations/{generationId}/confirm",
+                    STORY_ID,
+                    CHAPTER_ID,
+                    GENERATION_ID
+                ))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("generation_not_succeeded"));
+    }
+
+    private MockMvc mockMvc(ChapterGenerationService generationService) {
+        ChapterGenerationController controller = new ChapterGenerationController(
+            generationService,
+            Mockito.mock(ChapterService.class),
+            new ObjectMapper(),
+            "http://python-ai:8000"
+        );
+        return MockMvcBuilders.standaloneSetup(controller)
+            .setControllerAdvice(new GlobalExceptionHandler())
+            .build();
+    }
+
+    private Chapter confirmedChapter() {
+        Chapter chapter = new Chapter();
+        chapter.setId(CHAPTER_ID);
+        chapter.setStoryId(STORY_ID);
+        chapter.setChapterNumber(3);
+        chapter.setTitle("Dream Fire Gate");
+        chapter.setContent("The dream fire answered.");
+        chapter.setWordCount(2400);
+        chapter.setStatus(ChapterStatus.APPROVED);
+        chapter.setWorkflowStage(ChapterWorkflowStage.DRAFT_CONFIRMED);
+        chapter.setLastGenerationId(GENERATION_ID);
+        return chapter;
     }
 
     private ChapterGeneration generation() {

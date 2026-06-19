@@ -50,6 +50,12 @@ export function CreationConsole({
     [chapters, selectedChapterId],
   )
 
+  const selectedWorkflowStage = normalizeStage(
+    selectedChapter?.workflowStage ?? selectedChapter?.workflow_stage,
+  )
+  const draftConfirmed = isDraftConfirmedStage(selectedWorkflowStage)
+  const generationUnlocked = isDraftGenerationUnlocked(selectedWorkflowStage)
+
   const refreshStories = useCallback(async () => {
     try {
       const data = await listStories()
@@ -146,7 +152,7 @@ export function CreationConsole({
   }
 
   function handleGenerate() {
-    if (!isRunning && selectedStoryId && selectedChapterId) {
+    if (!isRunning && selectedStoryId && selectedChapterId && generationUnlocked && !draftConfirmed) {
       onGenerate(selectedStoryId, selectedChapterId)
     }
   }
@@ -266,6 +272,8 @@ export function CreationConsole({
                 <span className="chapter-meta">
                   {chapter.status}
                   {' · '}
+                  {formatWorkflowStage(chapter.workflowStage ?? chapter.workflow_stage)}
+                  {' · '}
                   {getWordCount(chapter).toLocaleString()} chars
                   {' · '}
                   {chapter.content ? 'has text' : 'empty'}
@@ -282,9 +290,9 @@ export function CreationConsole({
             type="button"
             className="btn-primary"
             onClick={handleGenerate}
-            disabled={!selectedStoryId || !selectedChapterId}
+            disabled={!selectedStoryId || !selectedChapterId || !generationUnlocked || draftConfirmed}
           >
-            Generate selected chapter
+            {draftConfirmed ? 'Draft confirmed' : 'Generate selected chapter'}
           </button>
         ) : (
           <button type="button" className="btn-danger" onClick={onCancel}>
@@ -302,6 +310,16 @@ export function CreationConsole({
       {(panelError || errorMessage) && (
         <div className="status-message error">{panelError || errorMessage}</div>
       )}
+      {selectedChapter && !generationUnlocked && !draftConfirmed && (
+        <div className="status-message">
+          Confirm this chapter outline before draft generation.
+        </div>
+      )}
+      {draftConfirmed && (
+        <div className="status-message success">
+          Draft confirmed. Memory extraction is the next step.
+        </div>
+      )}
       {status === 'done' && <div className="status-message success">Generation complete</div>}
     </div>
   )
@@ -317,4 +335,34 @@ function getChapterNumber(chapter: Chapter) {
 
 function getWordCount(chapter: Chapter) {
   return chapter.wordCount ?? chapter.word_count ?? 0
+}
+
+function normalizeStage(value?: string) {
+  return (value || '').toLowerCase()
+}
+
+function isDraftGenerationUnlocked(stage: string) {
+  return [
+    'outline_confirmed',
+    'draft_generating',
+    'draft_generated',
+    'draft_ready_for_confirmation',
+    'reviewing',
+    'revision_required',
+  ].includes(stage)
+}
+
+function isDraftConfirmedStage(stage: string) {
+  return [
+    'draft_confirmed',
+    'memory_extracting',
+    'memory_pending_confirmation',
+    'memory_confirmed',
+    'chapter_confirmed',
+  ].includes(stage)
+}
+
+function formatWorkflowStage(value?: string) {
+  if (!value) return 'chapter created'
+  return value.replaceAll('_', ' ')
 }

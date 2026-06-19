@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  adoptChapterGeneration,
+  confirmChapterGeneration,
   getChapterGeneration,
   listChapterGenerations,
 } from '../services/api'
@@ -11,21 +11,22 @@ interface GenerationHistoryProps {
   storyId?: string
   chapterId?: string
   refreshKey: number
-  onPreview: (draft: string) => void
-  onAdopted: (chapter: Chapter) => void
+  onGenerationSelected: (generation: ChapterGeneration | null) => void
+  onConfirmed: (chapter: Chapter) => void
 }
 
 export function GenerationHistory({
   storyId,
   chapterId,
   refreshKey,
-  onPreview,
-  onAdopted,
+  onGenerationSelected,
+  onConfirmed,
 }: GenerationHistoryProps) {
   const [items, setItems] = useState<ChapterGeneration[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [detail, setDetail] = useState<ChapterGeneration | null>(null)
   const [loading, setLoading] = useState(false)
+  const [confirmingId, setConfirmingId] = useState('')
   const [error, setError] = useState('')
 
   const selectedSummary = useMemo(
@@ -38,6 +39,7 @@ export function GenerationHistory({
       setItems([])
       setSelectedId('')
       setDetail(null)
+      onGenerationSelected(null)
       return
     }
 
@@ -49,13 +51,14 @@ export function GenerationHistory({
       if (data.length === 0) {
         setSelectedId('')
         setDetail(null)
+        onGenerationSelected(null)
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load history')
     } finally {
       setLoading(false)
     }
-  }, [chapterId, storyId])
+  }, [chapterId, onGenerationSelected, storyId])
 
   const loadDetail = useCallback(async (generationId: string) => {
     if (!storyId || !chapterId) return
@@ -65,25 +68,28 @@ export function GenerationHistory({
     try {
       const data = await getChapterGeneration(storyId, chapterId, generationId)
       setDetail(data)
-      onPreview(data.draft || '')
+      onGenerationSelected(data)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load generation')
     }
-  }, [chapterId, onPreview, storyId])
+  }, [chapterId, onGenerationSelected, storyId])
 
-  const handleAdopt = useCallback(async (generationId: string) => {
+  const handleConfirm = useCallback(async (generationId: string) => {
     if (!storyId || !chapterId) return
 
     setError('')
+    setConfirmingId(generationId)
     try {
-      const chapter = await adoptChapterGeneration(storyId, chapterId, generationId)
-      onAdopted(chapter)
+      const chapter = await confirmChapterGeneration(storyId, chapterId, generationId)
+      onConfirmed(chapter)
       await loadHistory()
       await loadDetail(generationId)
-    } catch (adoptError) {
-      setError(adoptError instanceof Error ? adoptError.message : 'Failed to adopt generation')
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : 'Failed to confirm draft')
+    } finally {
+      setConfirmingId('')
     }
-  }, [chapterId, loadDetail, loadHistory, onAdopted, storyId])
+  }, [chapterId, loadDetail, loadHistory, onConfirmed, storyId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -120,16 +126,17 @@ export function GenerationHistory({
                 </span>
                 <span className="history-side">
                   {(item.wordCount || 0).toLocaleString()}
-                  {item.adopted && <em>Adopted</em>}
+                  {item.adopted && <em>Confirmed</em>}
                 </span>
               </button>
               {item.status === 'succeeded' && !item.adopted && (
                 <button
                   type="button"
                   className="adopt-button"
-                  onClick={() => void handleAdopt(item.id)}
+                  onClick={() => void handleConfirm(item.id)}
+                  disabled={Boolean(confirmingId)}
                 >
-                  Adopt
+                  {confirmingId === item.id ? 'Confirming' : 'Confirm'}
                 </button>
               )}
             </div>

@@ -6,34 +6,62 @@ import { GenerationHistory } from './components/GenerationHistory'
 import { NovelIdeaChat } from './components/NovelIdeaChat'
 import { OutlineOptionsPanel } from './components/OutlineOptionsPanel'
 import { useSSE } from './hooks/useSSE'
-import type { Chapter, Story } from './types'
+import { confirmChapterGeneration } from './services/api'
+import type { Chapter, ChapterGeneration, Story } from './types'
 import './App.css'
 
 function App() {
   const { state, startGeneration, cancel, reset } = useSSE()
   const [selectedStory, setSelectedStory] = useState<Story | null>(null)
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null)
-  const [historyPreview, setHistoryPreview] = useState('')
+  const [selectedGeneration, setSelectedGeneration] = useState<ChapterGeneration | null>(null)
   const [chapterRefreshKey, setChapterRefreshKey] = useState(0)
   const [storyRefreshKey, setStoryRefreshKey] = useState(0)
   const [preferredStoryId, setPreferredStoryId] = useState<string | undefined>()
+  const [draftConfirming, setDraftConfirming] = useState(false)
+  const [draftConfirmError, setDraftConfirmError] = useState('')
 
   const handleGenerate = useCallback((storyId: string, chapterId: string) => {
-    setHistoryPreview('')
+    setSelectedGeneration(null)
+    setDraftConfirmError('')
     startGeneration({ story_id: storyId, chapter_id: chapterId })
   }, [startGeneration])
 
   const handleSelectionChange = useCallback((story: Story | null, chapter: Chapter | null) => {
     setSelectedStory(story)
     setSelectedChapter(chapter)
-    setHistoryPreview('')
+    setSelectedGeneration(null)
+    setDraftConfirmError('')
   }, [])
 
   const handleChapterUpdated = useCallback((chapter: Chapter) => {
     setSelectedChapter(chapter)
-    setHistoryPreview('')
     setChapterRefreshKey((value) => value + 1)
   }, [])
+
+  const handleGenerationSelected = useCallback((generation: ChapterGeneration | null) => {
+    setSelectedGeneration(generation)
+    setDraftConfirmError('')
+  }, [])
+
+  const handleConfirmDraft = useCallback(async (generationId: string) => {
+    if (!selectedStory?.id || !selectedChapter?.id || draftConfirming) return
+
+    setDraftConfirming(true)
+    setDraftConfirmError('')
+    try {
+      const chapter = await confirmChapterGeneration(selectedStory.id, selectedChapter.id, generationId)
+      setSelectedChapter(chapter)
+      setSelectedGeneration((current) => (
+        current?.id === generationId ? { ...current, adopted: true } : current
+      ))
+      setChapterRefreshKey((value) => value + 1)
+    } catch (error) {
+      setDraftConfirmError(error instanceof Error ? error.message : 'Failed to confirm draft')
+    } finally {
+      setDraftConfirming(false)
+    }
+  }, [draftConfirming, selectedChapter, selectedStory])
 
   const handleStoryCreated = useCallback((story: Story) => {
     setSelectedStory(story)
@@ -43,7 +71,7 @@ function App() {
   }, [])
 
   const isGenerating = state.status === 'generating' || state.status === 'connecting'
-  const previewText = isGenerating ? state.draft : historyPreview || selectedChapter?.content || ''
+  const previewText = isGenerating ? state.draft : selectedGeneration?.draft || selectedChapter?.content || ''
 
   return (
     <div className="app">
@@ -79,9 +107,9 @@ function App() {
           <GenerationHistory
             storyId={selectedStory?.id}
             chapterId={selectedChapter?.id}
-            refreshKey={state.completionSeq}
-            onPreview={setHistoryPreview}
-            onAdopted={handleChapterUpdated}
+            refreshKey={state.completionSeq + chapterRefreshKey}
+            onGenerationSelected={handleGenerationSelected}
+            onConfirmed={handleChapterUpdated}
           />
         </div>
 
@@ -96,6 +124,14 @@ function App() {
           <LivePreview
             draft={previewText}
             isGenerating={isGenerating}
+            status={state.status}
+            errorMessage={draftConfirmError || state.errorMessage}
+            generationId={state.generationId}
+            generation={selectedGeneration}
+            chapter={selectedChapter}
+            runtimeHistory={state.executionHistory}
+            confirming={draftConfirming}
+            onConfirmDraft={handleConfirmDraft}
           />
         </div>
       </main>

@@ -83,6 +83,9 @@ export interface ChapterGeneration {
   executionHistory?: Array<Record<string, unknown>>
   consistencyReport?: Record<string, unknown>
   reviewReport?: Record<string, unknown>
+  repairReport?: Record<string, unknown>
+  repairResult?: Record<string, unknown>
+  autoRepairResult?: Record<string, unknown>
   checkpointId?: string
   errorMessage?: string
   adopted: boolean

@@ -21,6 +21,7 @@ import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.ChapterGeneration;
 import com.dreamweaver.entity.ChapterOutline;
 import com.dreamweaver.entity.ChapterOutlineStatus;
+import com.dreamweaver.entity.ChapterStatus;
 import com.dreamweaver.entity.ChapterWorkflowStage;
 import com.dreamweaver.entity.GenerationStatus;
 import com.dreamweaver.entity.NovelBlueprint;
@@ -38,6 +39,7 @@ class ChapterGenerationServiceTests {
 
     private static final UUID STORY_ID = UUID.fromString("10000000-0000-0000-0000-000000000050");
     private static final UUID CHAPTER_ID = UUID.fromString("20000000-0000-0000-0000-000000000050");
+    private static final UUID GENERATION_ID = UUID.fromString("30000000-0000-0000-0000-000000000050");
 
     @Mock
     private ChapterGenerationRepository generationRepository;
@@ -103,6 +105,227 @@ class ChapterGenerationServiceTests {
             .hasMessageContaining("blueprint must be confirmed");
 
         verify(generationRepository, never()).save(any(ChapterGeneration.class));
+    }
+
+    @Test
+    void confirmDraftStoresSucceededGenerationAndMarksDraftConfirmed() {
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+        ChapterGeneration generation = succeededGeneration(GENERATION_ID, "The dream fire answered.");
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(chapterRepository.save(any(Chapter.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Chapter confirmed = service.confirmDraft(STORY_ID, CHAPTER_ID, GENERATION_ID);
+
+        assertThat(confirmed.getContent()).isEqualTo("The dream fire answered.");
+        assertThat(confirmed.getWordCount()).isEqualTo(2400);
+        assertThat(confirmed.getLastGenerationId()).isEqualTo(GENERATION_ID);
+        assertThat(confirmed.getStatus()).isEqualTo(ChapterStatus.APPROVED);
+        assertThat(confirmed.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_CONFIRMED);
+    }
+
+    @Test
+    void confirmDraftRejectsNonSucceededGeneration() {
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.RUNNING, "still streaming");
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+
+        assertThatThrownBy(() -> service.confirmDraft(STORY_ID, CHAPTER_ID, GENERATION_ID))
+            .isInstanceOf(BadRequestException.class)
+            .hasMessageContaining("succeeded generation");
+
+        verify(chapterRepository, never()).save(any(Chapter.class));
+    }
+
+    @Test
+    void confirmDraftRejectsEmptyDraft() {
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+        ChapterGeneration generation = succeededGeneration(GENERATION_ID, " ");
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+
+        assertThatThrownBy(() -> service.confirmDraft(STORY_ID, CHAPTER_ID, GENERATION_ID))
+            .isInstanceOf(BadRequestException.class)
+            .hasMessageContaining("no draft content");
+
+        verify(chapterRepository, never()).save(any(Chapter.class));
+    }
+
+    @Test
+    void confirmDraftIsIdempotentForSameConfirmedGeneration() {
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_CONFIRMED);
+        chapter.setLastGenerationId(GENERATION_ID);
+        chapter.setContent("Already confirmed.");
+        chapter.setStatus(ChapterStatus.APPROVED);
+        ChapterGeneration generation = succeededGeneration(GENERATION_ID, "Already confirmed.");
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+
+        Chapter confirmed = service.confirmDraft(STORY_ID, CHAPTER_ID, GENERATION_ID);
+
+        assertThat(confirmed).isSameAs(chapter);
+        verify(chapterRepository, never()).save(any(Chapter.class));
+    }
+
+    @Test
+    void confirmDraftRejectsDifferentGenerationAfterDraftConfirmed() {
+        UUID otherGenerationId = UUID.fromString("30000000-0000-0000-0000-000000000051");
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_CONFIRMED);
+        chapter.setLastGenerationId(GENERATION_ID);
+        ChapterGeneration generation = succeededGeneration(otherGenerationId, "A different draft.");
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            otherGenerationId,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+
+        assertThatThrownBy(() -> service.confirmDraft(STORY_ID, CHAPTER_ID, otherGenerationId))
+            .isInstanceOf(ConflictException.class)
+            .hasMessageContaining("already been confirmed");
+
+        verify(chapterRepository, never()).save(any(Chapter.class));
+    }
+
+    @Test
+    void confirmDraftRejectsDifferentGenerationAfterMemoryStarted() {
+        UUID otherGenerationId = UUID.fromString("30000000-0000-0000-0000-000000000051");
+        Chapter chapter = chapter(ChapterWorkflowStage.MEMORY_PENDING_CONFIRMATION);
+        chapter.setLastGenerationId(GENERATION_ID);
+        ChapterGeneration generation = succeededGeneration(otherGenerationId, "A different draft.");
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            otherGenerationId,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+
+        assertThatThrownBy(() -> service.confirmDraft(STORY_ID, CHAPTER_ID, otherGenerationId))
+            .isInstanceOf(ConflictException.class)
+            .hasMessageContaining("already been confirmed");
+
+        verify(chapterRepository, never()).save(any(Chapter.class));
+    }
+
+    @Test
+    void markRunningMovesChapterToDraftGenerating() {
+        Chapter chapter = chapter(ChapterWorkflowStage.OUTLINE_CONFIRMED);
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.QUEUED, null);
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(generationRepository.save(any(ChapterGeneration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.markRunning(STORY_ID, CHAPTER_ID, GENERATION_ID);
+
+        assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.GENERATING);
+        assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_GENERATING);
+    }
+
+    @Test
+    void markRunningDoesNotRegressConfirmedDraftWorkflowStage() {
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_CONFIRMED);
+        chapter.setLastGenerationId(GENERATION_ID);
+        chapter.setStatus(ChapterStatus.APPROVED);
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.QUEUED, null);
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(generationRepository.save(any(ChapterGeneration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.markRunning(STORY_ID, CHAPTER_ID, GENERATION_ID);
+
+        assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.APPROVED);
+        assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_CONFIRMED);
+    }
+
+    @Test
+    void completeFromStreamMovesChapterToDraftReadyForConfirmation() {
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_GENERATING);
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.RUNNING, null);
+        generation.setRequest(Map.of("auto_adopt", true));
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(generationRepository.save(any(ChapterGeneration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.completeFromStream(
+            STORY_ID,
+            CHAPTER_ID,
+            GENERATION_ID,
+            "The completed draft.",
+            1800,
+            java.util.List.of()
+        );
+
+        assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.GENERATED);
+        assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+    }
+
+    @Test
+    void completeFromStreamDoesNotRegressConfirmedDraftWorkflowStage() {
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_CONFIRMED);
+        chapter.setLastGenerationId(GENERATION_ID);
+        chapter.setStatus(ChapterStatus.APPROVED);
+        chapter.setContent("Confirmed draft.");
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.RUNNING, null);
+        generation.setRequest(Map.of("auto_adopt", true));
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(generationRepository.save(any(ChapterGeneration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.completeFromStream(
+            STORY_ID,
+            CHAPTER_ID,
+            GENERATION_ID,
+            "Late stream result.",
+            1800,
+            java.util.List.of()
+        );
+
+        assertThat(chapter.getContent()).isEqualTo("Confirmed draft.");
+        assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.APPROVED);
+        assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_CONFIRMED);
     }
 
     private ChapterGenerationService service() {
@@ -186,6 +409,24 @@ class ChapterGenerationServiceTests {
         ));
         outline.setStatus(ChapterOutlineStatus.CONFIRMED);
         return outline;
+    }
+
+    private ChapterGeneration succeededGeneration(UUID generationId, String draft) {
+        ChapterGeneration generation = generation(generationId, GenerationStatus.SUCCEEDED, draft);
+        generation.setWordCount(2400);
+        return generation;
+    }
+
+    private ChapterGeneration generation(UUID generationId, GenerationStatus status, String draft) {
+        ChapterGeneration generation = new ChapterGeneration();
+        generation.setId(generationId);
+        generation.setStoryId(STORY_ID);
+        generation.setChapterId(CHAPTER_ID);
+        generation.setUserId(UUID.fromString("00000000-0000-0000-0000-000000000001"));
+        generation.setStatus(status);
+        generation.setDraft(draft);
+        generation.setRequest(Map.of());
+        return generation;
     }
 
     @SuppressWarnings("unchecked")

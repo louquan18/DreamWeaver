@@ -47,6 +47,14 @@ public class ChapterGenerationService {
         ChapterWorkflowStage.CHAPTER_CONFIRMED
     );
 
+    private static final Set<ChapterWorkflowStage> DRAFT_LOCKED_STAGES = EnumSet.of(
+        ChapterWorkflowStage.DRAFT_CONFIRMED,
+        ChapterWorkflowStage.MEMORY_EXTRACTING,
+        ChapterWorkflowStage.MEMORY_PENDING_CONFIRMATION,
+        ChapterWorkflowStage.MEMORY_CONFIRMED,
+        ChapterWorkflowStage.CHAPTER_CONFIRMED
+    );
+
     private final ChapterGenerationRepository generationRepository;
     private final ChapterService chapterService;
     private final StoryRepository storyRepository;
@@ -134,6 +142,50 @@ public class ChapterGenerationService {
         chapter.setLastGenerationId(generation.getId());
         chapter.setStatus(ChapterStatus.GENERATED);
         return chapterService.save(chapter);
+    }
+
+    @Transactional
+    public Chapter confirmDraft(UUID storyId, UUID chapterId, UUID generationId) {
+        Chapter chapter = chapterService.get(storyId, chapterId);
+        ChapterGeneration generation = get(storyId, chapterId, generationId);
+
+        if (DRAFT_LOCKED_STAGES.contains(chapter.getWorkflowStage())
+            && !generationId.equals(chapter.getLastGenerationId())) {
+            throw new ConflictException(
+                "draft_already_confirmed",
+                "Chapter draft has already been confirmed with another generation: " + chapterId
+            );
+        }
+
+        assertConfirmableGeneration(generation);
+
+        if (DRAFT_LOCKED_STAGES.contains(chapter.getWorkflowStage())) {
+            return chapter;
+        }
+
+        chapter.setContent(generation.getDraft());
+        chapter.setWordCount(
+            generation.getWordCount() == null ? lengthOrNull(generation.getDraft()) : generation.getWordCount()
+        );
+        chapter.setLastGenerationId(generation.getId());
+        chapter.setStatus(ChapterStatus.APPROVED);
+        chapter.setWorkflowStage(ChapterWorkflowStage.DRAFT_CONFIRMED);
+        return chapterService.save(chapter);
+    }
+
+    private void assertConfirmableGeneration(ChapterGeneration generation) {
+        if (generation.getStatus() != GenerationStatus.SUCCEEDED) {
+            throw new BadRequestException(
+                "generation_not_succeeded",
+                "Only succeeded generation can be confirmed"
+            );
+        }
+        if (generation.getDraft() == null || generation.getDraft().isBlank()) {
+            throw new BadRequestException(
+                "generation_draft_empty",
+                "Succeeded generation has no draft content to confirm"
+            );
+        }
     }
 
     private String modelProfile(ChapterGenerationCreateRequest request) {
@@ -261,8 +313,11 @@ public class ChapterGenerationService {
 
         generation.setStatus(GenerationStatus.RUNNING);
         generation.setStartedAt(OffsetDateTime.now());
-        chapter.setStatus(ChapterStatus.GENERATING);
-        chapterService.save(chapter);
+        if (!DRAFT_LOCKED_STAGES.contains(chapter.getWorkflowStage())) {
+            chapter.setStatus(ChapterStatus.GENERATING);
+            chapter.setWorkflowStage(ChapterWorkflowStage.DRAFT_GENERATING);
+            chapterService.save(chapter);
+        }
         return generationRepository.save(generation);
     }
 
@@ -285,17 +340,20 @@ public class ChapterGenerationService {
         generation.setCompletedAt(OffsetDateTime.now());
         generation = generationRepository.save(generation);
 
-        if (autoAdopt(generation.getRequest())) {
-            chapter.setContent(generation.getDraft());
-            chapter.setWordCount(generation.getWordCount());
-            chapter.setLastGenerationId(generation.getId());
-            chapter.setStatus(ChapterStatus.GENERATED);
-        } else {
-            chapter.setStatus(
-                chapter.getLastGenerationId() == null ? ChapterStatus.DRAFT : ChapterStatus.GENERATED
-            );
+        if (!DRAFT_LOCKED_STAGES.contains(chapter.getWorkflowStage())) {
+            if (autoAdopt(generation.getRequest())) {
+                chapter.setContent(generation.getDraft());
+                chapter.setWordCount(generation.getWordCount());
+                chapter.setLastGenerationId(generation.getId());
+                chapter.setStatus(ChapterStatus.GENERATED);
+            } else {
+                chapter.setStatus(
+                    chapter.getLastGenerationId() == null ? ChapterStatus.DRAFT : ChapterStatus.GENERATED
+                );
+            }
+            chapter.setWorkflowStage(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+            chapterService.save(chapter);
         }
-        chapterService.save(chapter);
 
         return generation;
     }
@@ -315,10 +373,15 @@ public class ChapterGenerationService {
         generation.setCompletedAt(OffsetDateTime.now());
         generation = generationRepository.save(generation);
 
-        chapter.setStatus(
-            chapter.getLastGenerationId() == null ? ChapterStatus.DRAFT : ChapterStatus.GENERATED
-        );
-        chapterService.save(chapter);
+        if (!DRAFT_LOCKED_STAGES.contains(chapter.getWorkflowStage())) {
+            chapter.setStatus(
+                chapter.getLastGenerationId() == null ? ChapterStatus.DRAFT : ChapterStatus.GENERATED
+            );
+            if (chapter.getWorkflowStage() == ChapterWorkflowStage.DRAFT_GENERATING) {
+                chapter.setWorkflowStage(ChapterWorkflowStage.REVISION_REQUIRED);
+            }
+            chapterService.save(chapter);
+        }
 
         return generation;
     }

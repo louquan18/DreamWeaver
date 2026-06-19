@@ -113,6 +113,15 @@ public class ChapterGenerationController {
         return ChapterResponse.from(generationService.adopt(storyId, chapterId, generationId));
     }
 
+    @PostMapping("/{generationId}/confirm")
+    public ChapterResponse confirm(
+        @PathVariable UUID storyId,
+        @PathVariable UUID chapterId,
+        @PathVariable UUID generationId
+    ) {
+        return ChapterResponse.from(generationService.confirmDraft(storyId, chapterId, generationId));
+    }
+
     @GetMapping(
         value = "/{generationId}/events",
         produces = MediaType.TEXT_EVENT_STREAM_VALUE

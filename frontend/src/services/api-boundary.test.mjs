@@ -14,8 +14,14 @@ const outlineOptionsSource = await readFile(
   resolve(currentDir, '../components/OutlineOptionsPanel.tsx'),
   'utf8',
 )
+const generationHistorySource = await readFile(
+  resolve(currentDir, '../components/GenerationHistory.tsx'),
+  'utf8',
+)
+const sseHookSource = await readFile(resolve(currentDir, '../hooks/useSSE.ts'), 'utf8')
 const blueprintSources = `${apiSource}\n${ideaChatSource}`
 const outlineSources = `${apiSource}\n${outlineOptionsSource}`
+const generationSources = `${apiSource}\n${generationHistorySource}\n${sseHookSource}`
 
 test('blueprint API calls stay behind the Java service boundary', () => {
   assert.match(apiSource, /const API_BASE = ''/)
@@ -54,4 +60,25 @@ test('outline option component uses the frontend API client', () => {
   assert.match(outlineOptionsSource, /confirmChapterOutline/)
   assert.doesNotMatch(outlineOptionsSource, /\bfetch\s*\(/)
   assert.doesNotMatch(outlineOptionsSource, /\bEventSource\s*\(/)
+})
+
+test('draft generation and confirmation stay behind the Java service boundary', () => {
+  assert.match(apiSource, /\/api\/stories\/\$\{req\.story_id\}\/chapters\/\$\{req\.chapter_id\}\/generations/)
+  assert.match(apiSource, /\/api\/stories\/\$\{req\.story_id\}\/chapters\/\$\{req\.chapter_id\}\/generations\/\$\{generation\.id\}\/events/)
+  assert.match(apiSource, /\/api\/stories\/\$\{storyId\}\/chapters\/\$\{chapterId\}\/generations\/\$\{generationId\}\/confirm/)
+
+  assert.doesNotMatch(generationSources, /\/internal\/ai/)
+  assert.doesNotMatch(generationSources, /localhost:8000/)
+  assert.doesNotMatch(generationSources, /PYTHON_AI_BASE_URL/)
+  assert.doesNotMatch(generationSources, /python-ai/i)
+})
+
+test('draft UI components use the frontend API client for generation records', () => {
+  assert.match(generationHistorySource, /listChapterGenerations/)
+  assert.match(generationHistorySource, /getChapterGeneration/)
+  assert.match(generationHistorySource, /confirmChapterGeneration/)
+  assert.match(sseHookSource, /generateChapterStream/)
+  assert.doesNotMatch(generationHistorySource, /\bfetch\s*\(/)
+  assert.doesNotMatch(generationHistorySource, /\bEventSource\s*\(/)
+  assert.doesNotMatch(sseHookSource, /\bEventSource\s*\(/)
 })

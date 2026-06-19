@@ -285,6 +285,23 @@ export async function adoptChapterGeneration(
   return res.json()
 }
 
+export async function confirmChapterGeneration(
+  storyId: string,
+  chapterId: string,
+  generationId: string,
+): Promise<Chapter> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/generations/${generationId}/confirm`,
+    {
+      method: 'POST',
+    },
+  )
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to confirm draft'))
+  }
+  return res.json()
+}
+
 export async function listChapterOutlineOptions(
   storyId: string,
   chapterId: string,
