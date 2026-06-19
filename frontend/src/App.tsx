@@ -4,6 +4,7 @@ import { LivePreview } from './components/LivePreview'
 import { AgentStatus } from './components/AgentStatus'
 import { GenerationHistory } from './components/GenerationHistory'
 import { NovelIdeaChat } from './components/NovelIdeaChat'
+import { OutlineOptionsPanel } from './components/OutlineOptionsPanel'
 import { useSSE } from './hooks/useSSE'
 import type { Chapter, Story } from './types'
 import './App.css'
@@ -85,6 +86,13 @@ function App() {
         </div>
 
         <div className="right-panel">
+          <OutlineOptionsPanel
+            storyId={selectedStory?.id}
+            chapterId={selectedChapter?.id}
+            chapter={selectedChapter ?? undefined}
+            refreshKey={chapterRefreshKey}
+            onChapterConfirmed={handleChapterUpdated}
+          />
           <LivePreview
             draft={previewText}
             isGenerating={isGenerating}

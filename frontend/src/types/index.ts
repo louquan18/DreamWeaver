@@ -30,6 +30,8 @@ export interface Chapter {
   word_count?: number
   lastGenerationId?: string
   status: string
+  workflowStage?: string
+  workflow_stage?: string
   createdAt?: string
   updatedAt?: string
   created_at?: string
@@ -160,4 +162,121 @@ export interface BlueprintConfirmRequest {
 export interface BlueprintConfirmResult {
   story?: Story
   blueprint: NovelBlueprint
+}
+
+export type OutlineOptionCode = 'A' | 'B' | 'C'
+export type OutlineOptionType = 'steady' | 'conflict' | 'foreshadow'
+
+export interface OutlineScene {
+  order?: number
+  summary?: string
+  purpose?: string
+  characters?: string[]
+  location?: string
+  povCharacter?: string
+  tension?: string
+  outcome?: string
+  [key: string]: unknown
+}
+
+export interface OutlineCharacter {
+  name?: string
+  role?: string
+  motivation?: string
+  stateChange?: string
+  state_change?: string
+  [key: string]: unknown
+}
+
+export interface ForeshadowAction {
+  action?: 'plant' | 'strengthen' | 'trigger' | 'resolve' | string
+  description?: string
+  foreshadowId?: string
+  foreshadow_id?: string
+  evidence?: string
+  payoffHint?: string
+  payoff_hint?: string
+  [key: string]: unknown
+}
+
+export interface MemoryReference {
+  memoryType?: string
+  memory_type?: string
+  memoryId?: string
+  memory_id?: string
+  referenceId?: string
+  summary?: string
+  relevance?: string
+  [key: string]: unknown
+}
+
+export interface ChapterOutlineOption {
+  id?: string
+  storyId?: string
+  chapterId?: string
+  optionGroupId?: string
+  option_group_id?: string
+  optionCode?: OutlineOptionCode
+  option_code?: OutlineOptionCode
+  optionType?: OutlineOptionType
+  option_type?: OutlineOptionType
+  titleCandidates?: string[]
+  title_candidates?: string[]
+  chapterGoal?: string
+  chapter_goal?: string
+  storySummary?: string
+  story_summary?: string
+  sceneOutline?: OutlineScene[]
+  scene_outline?: OutlineScene[]
+  charactersInvolved?: OutlineCharacter[]
+  characters_involved?: OutlineCharacter[]
+  conflict?: Record<string, unknown>
+  highlightMoment?: string
+  highlight_moment?: string
+  foreshadowActions?: ForeshadowAction[]
+  foreshadow_actions?: ForeshadowAction[]
+  memoryReferences?: MemoryReference[]
+  memory_references?: MemoryReference[]
+  whyThisPlan?: string
+  why_this_plan?: string
+  endingHook?: string
+  ending_hook?: string
+  riskNotes?: string[]
+  risk_notes?: string[]
+  status?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface ChapterOutline {
+  id: string
+  storyId?: string
+  chapterId?: string
+  sourceOptionIds?: string[]
+  userFeedback?: string
+  finalOutline: Record<string, unknown>
+  status: string
+  confirmedAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface ChapterOutlineConfirmRequest {
+  sourceOptionIds?: string[]
+  userFeedback?: string
+  finalOutline?: Record<string, unknown>
+}
+
+export interface ChapterOutlineConfirmResult {
+  chapter: Chapter
+  outline: ChapterOutline
+}
+
+export interface ChapterOutlineOptionsGenerateRequest {
+  authorIntent?: Record<string, unknown>
+}
+
+export interface ChapterOutlineOptionsGenerateResult {
+  chapter: Chapter
+  options: ChapterOutlineOption[]
 }

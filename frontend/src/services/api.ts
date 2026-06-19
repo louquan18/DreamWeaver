@@ -6,6 +6,11 @@ import type {
   BlueprintUpdateRequest,
   Chapter,
   ChapterGeneration,
+  ChapterOutlineConfirmRequest,
+  ChapterOutlineConfirmResult,
+  ChapterOutlineOption,
+  ChapterOutlineOptionsGenerateRequest,
+  ChapterOutlineOptionsGenerateResult,
   GenerateRequest,
   GenerateResponse,
   NovelBlueprint,
@@ -277,6 +282,69 @@ export async function adoptChapterGeneration(
     const error = await res.json().catch(() => ({ message: 'Failed to adopt generation' }))
     throw new Error(error.message || 'Failed to adopt generation')
   }
+  return res.json()
+}
+
+export async function listChapterOutlineOptions(
+  storyId: string,
+  chapterId: string,
+  groupId?: string,
+): Promise<ChapterOutlineOption[]> {
+  const params = groupId ? `?groupId=${encodeURIComponent(groupId)}` : ''
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/outline-options${params}`,
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to load outline options'))
+  }
+
+  return res.json()
+}
+
+export async function confirmChapterOutline(
+  storyId: string,
+  chapterId: string,
+  req: ChapterOutlineConfirmRequest,
+): Promise<ChapterOutlineConfirmResult> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/outlines/confirm`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req),
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to confirm chapter outline'))
+  }
+
+  return res.json()
+}
+
+export async function generateChapterOutlineOptions(
+  storyId: string,
+  chapterId: string,
+  req: ChapterOutlineOptionsGenerateRequest = {},
+): Promise<ChapterOutlineOptionsGenerateResult> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/outline-options/generate`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req),
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to generate outline options'))
+  }
+
   return res.json()
 }
 
