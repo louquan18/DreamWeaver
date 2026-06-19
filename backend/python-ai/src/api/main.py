@@ -9,7 +9,7 @@ from loguru import logger
 from src.core.config import settings
 from src.core.logging import setup_logging
 
-from .routes import blueprints, chapters, health
+from .routes import blueprints, chapters, drafts, health, outlines
 
 
 @asynccontextmanager
@@ -41,3 +41,5 @@ app.add_middleware(
 app.include_router(health.router, tags=["health"])
 app.include_router(chapters.router)
 app.include_router(blueprints.router)
+app.include_router(outlines.router)
+app.include_router(drafts.router)

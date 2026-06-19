@@ -145,17 +145,21 @@ public class ChapterGenerationController {
         try {
             URI uri = URI.create(
                 pythonAiBaseUrl
-                    + "/api/ai/chapters/generate-stream"
-                    + "?story_id=" + encode(generation.getStoryId().toString())
-                    + "&chapter_id=" + encode(generation.getChapterId().toString())
-                    + "&user_id=" + encode(generation.getUserId().toString())
-                    + "&generation_id=" + encode(generation.getId().toString())
+                    + "/internal/ai/stories/" + encode(generation.getStoryId().toString())
+                    + "/chapters/" + encode(generation.getChapterId().toString())
+                    + "/drafts/stream"
             );
             connection = (HttpURLConnection) uri.toURL().openConnection();
-            connection.setRequestMethod("GET");
+            connection.setRequestMethod("POST");
             connection.setRequestProperty("Accept", MediaType.TEXT_EVENT_STREAM_VALUE);
+            connection.setRequestProperty("Content-Type", MediaType.APPLICATION_JSON_VALUE);
             connection.setConnectTimeout(10_000);
             connection.setReadTimeout(0);
+            connection.setDoOutput(true);
+
+            try (OutputStream requestBody = connection.getOutputStream()) {
+                objectMapper.writeValue(requestBody, pythonDraftRequest(generation));
+            }
 
             try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8)
@@ -188,6 +192,32 @@ public class ChapterGenerationController {
                 connection.disconnect();
             }
         }
+    }
+
+    Map<String, Object> pythonDraftRequest(ChapterGeneration generation) {
+        Map<String, Object> request = generation.getRequest();
+        Map<String, Object> writingContext = mapValue(request.get("writing_context"));
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("generationId", generation.getId().toString());
+        payload.put("userId", generation.getUserId().toString());
+        payload.put("story", writingContext.getOrDefault("story", Map.of()));
+        payload.put("chapter", writingContext.getOrDefault("chapter", Map.of()));
+        payload.put("blueprint", writingContext.getOrDefault("blueprint", Map.of()));
+        payload.put("confirmedOutline", writingContext.getOrDefault("confirmedOutline", Map.of()));
+        payload.put("recentChapters", writingContext.getOrDefault("recentChapters", List.of()));
+        payload.put("extraPrompt", request.get("extra_prompt"));
+        payload.put("targetWords", request.get("target_words"));
+        payload.put("modelProfile", request.get("model_profile"));
+        return payload;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mapValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return Map.of();
     }
 
     private void handlePythonEvent(

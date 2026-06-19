@@ -14,6 +14,7 @@ public record ChapterResponse(
     String contentUrl,
     Integer wordCount,
     String status,
+    String workflowStage,
     UUID lastGenerationId,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt
@@ -28,6 +29,7 @@ public record ChapterResponse(
             chapter.getContentUrl(),
             chapter.getWordCount(),
             chapter.getStatus().value(),
+            chapter.getWorkflowStage().value(),
             chapter.getLastGenerationId(),
             chapter.getCreatedAt(),
             chapter.getUpdatedAt()
