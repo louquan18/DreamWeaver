@@ -89,3 +89,75 @@ export interface ChapterGeneration {
   createdAt?: string
   updatedAt?: string
 }
+
+export interface BlueprintValidationIssue {
+  code: string
+  path: string
+  message: string
+  severity: 'error' | 'warning'
+  blocking: boolean
+}
+
+export interface NovelBlueprint {
+  id?: string
+  storyId?: string
+  story_id?: string
+  sourcePrompt?: string
+  source_prompt?: string
+  premise: string
+  genre?: string | null
+  tone?: string | null
+  protagonist?: Record<string, unknown>
+  mainThread?: Record<string, unknown>
+  main_thread?: Record<string, unknown>
+  coreConflict?: Record<string, unknown>
+  core_conflict?: Record<string, unknown>
+  worldSeed?: Record<string, unknown>
+  world_seed?: Record<string, unknown>
+  writingPreferences?: Record<string, unknown>
+  writing_preferences?: Record<string, unknown>
+  lockedFacts?: Array<Record<string, unknown>>
+  locked_facts?: Array<Record<string, unknown>>
+  validationIssues?: BlueprintValidationIssue[]
+  validation_issues?: BlueprintValidationIssue[]
+  status?: string
+  confirmedAt?: string
+  supersededAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface BlueprintGenerateRequest {
+  sourcePrompt: string
+  genre?: string
+  tone?: string
+  targetWords?: number
+  preferences?: Record<string, unknown>
+}
+
+export interface BlueprintUpdateRequest {
+  sourcePrompt?: string
+  premise?: string
+  genre?: string
+  tone?: string
+  protagonist?: Record<string, unknown>
+  mainThread?: Record<string, unknown>
+  coreConflict?: Record<string, unknown>
+  worldSeed?: Record<string, unknown>
+  writingPreferences?: Record<string, unknown>
+  lockedFacts?: Array<Record<string, unknown>>
+}
+
+export interface BlueprintGenerateResult {
+  story?: Story
+  blueprint: NovelBlueprint
+}
+
+export interface BlueprintConfirmRequest {
+  editedBlueprint?: BlueprintUpdateRequest
+}
+
+export interface BlueprintConfirmResult {
+  story?: Story
+  blueprint: NovelBlueprint
+}

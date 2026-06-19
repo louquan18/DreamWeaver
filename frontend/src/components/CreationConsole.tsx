@@ -9,6 +9,8 @@ interface CreationConsoleProps {
   onReset: () => void
   onSelectionChange: (story: Story | null, chapter: Chapter | null) => void
   refreshKey: number
+  storyRefreshKey?: number
+  preferredStoryId?: string
   status: 'idle' | 'connecting' | 'generating' | 'done' | 'error'
   errorMessage: string
 }
@@ -19,6 +21,8 @@ export function CreationConsole({
   onReset,
   onSelectionChange,
   refreshKey,
+  storyRefreshKey = 0,
+  preferredStoryId,
   status,
   errorMessage,
 }: CreationConsoleProps) {
@@ -50,7 +54,9 @@ export function CreationConsole({
     try {
       const data = await listStories()
       setStories(data)
-      if (!selectedStoryId && data.length > 0) {
+      if (preferredStoryId && data.some((story) => story.id === preferredStoryId)) {
+        setSelectedStoryId(preferredStoryId)
+      } else if (!selectedStoryId && data.length > 0) {
         setSelectedStoryId(data[0].id)
       }
     } catch (error) {
@@ -58,7 +64,7 @@ export function CreationConsole({
     } finally {
       setLoading(false)
     }
-  }, [selectedStoryId])
+  }, [preferredStoryId, selectedStoryId])
 
   const refreshChapters = useCallback(async (storyId: string) => {
     try {
@@ -80,7 +86,7 @@ export function CreationConsole({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshStories()
-  }, [refreshStories])
+  }, [refreshStories, storyRefreshKey])
 
   useEffect(() => {
     if (selectedStoryId) {

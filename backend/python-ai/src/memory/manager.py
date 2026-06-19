@@ -167,8 +167,10 @@ class MemoryManager:
         """回收伏笔"""
         memory = self._get_or_create(story_id)
         for fs in memory.foreshadows:
-            if fs.id == foreshadow_id and fs.status == "active":
+            if fs.id == foreshadow_id and fs.status in Foreshadow.OPEN_STATUSES:
                 fs.status = "resolved"
+                fs.attention_status = "normal"
+                fs.needs_attention = False
                 if self._repo:
                     await self._save_memory(story_id, "foreshadow", {
                         "foreshadows": [f.model_dump() for f in memory.foreshadows],
@@ -177,32 +179,52 @@ class MemoryManager:
         return False
 
     async def get_active_foreshadows(self, story_id: str) -> list[Foreshadow]:
-        """获取活跃伏笔"""
+        """获取尚未终结的伏笔。
+
+        保留旧方法名以兼容现有调用；P1 语义下返回 planned/planted/reinforced/
+        triggered/revealed，不返回 resolved/abandoned。
+        """
         if self._repo:
             await self._load_from_db(story_id, "foreshadow")
         memory = self._get_or_create(story_id)
-        return [f for f in memory.foreshadows if f.status == "active"]
+        return [f for f in memory.foreshadows if f.status in Foreshadow.OPEN_STATUSES]
 
     async def age_foreshadows(self, story_id: str, current_chapter: int) -> list[Foreshadow]:
         """
-        每章创作前调用：更新伏笔年龄，超期标记为 overdue。
+        每章创作前调用：更新伏笔年龄，超期时设置关注状态。
 
         Returns:
-            需要告警的伏笔列表（overdue 的）
+            需要告警的伏笔列表（attention_status=overdue 的）
         """
         memory = self._get_or_create(story_id)
         alerts = []
+        changed = False
         for fs in memory.foreshadows:
-            if fs.status == "active":
+            if fs.status in Foreshadow.OPEN_STATUSES:
+                old_age = fs.age
                 fs.age = current_chapter - fs.chapter_planted
+                if fs.age != old_age:
+                    changed = True
                 if fs.age > fs.max_age:
-                    fs.status = "overdue"
+                    if fs.attention_status != "overdue" or not fs.needs_attention:
+                        changed = True
+                    fs.attention_status = "overdue"
+                    fs.needs_attention = True
                     alerts.append(fs)
                     logger.warning(
                         f"[Memory] Foreshadow {fs.id} overdue: planted ch{fs.chapter_planted}, "
                         f"age={fs.age} > max_age={fs.max_age}"
                     )
-        if alerts and self._repo:
+                elif fs.age >= fs.max_age:
+                    if fs.attention_status != "due_soon":
+                        changed = True
+                    fs.attention_status = "due_soon"
+                    fs.needs_attention = False
+                elif fs.attention_status != "normal" or fs.needs_attention:
+                    changed = True
+                    fs.attention_status = "normal"
+                    fs.needs_attention = False
+        if changed and self._repo:
             await self._save_memory(story_id, "foreshadow", {
                 "foreshadows": [f.model_dump() for f in memory.foreshadows],
             })
@@ -259,13 +281,25 @@ class MemoryManager:
         # 时间线：加权选取，保留 permanent + 高重要度 + 最近事件
         timeline = self._select_timeline_events(memory.timeline, max_count=20)
 
-        # 伏笔：overdue 排最前，然后按 importance 排序，限制 10 个
+        # 伏笔：仅纳入未终结伏笔；关注状态优先，然后按生命周期和重要性排序。
         active_foreshadows = [
-            f for f in memory.foreshadows if f.status in ("active", "overdue")
+            f for f in memory.foreshadows if f.status in Foreshadow.OPEN_STATUSES
         ]
         importance_order = {"high": 0, "medium": 1, "low": 2}
+        lifecycle_order = {
+            "triggered": 0,
+            "revealed": 1,
+            "reinforced": 2,
+            "planted": 3,
+            "planned": 4,
+        }
         active_foreshadows.sort(
-            key=lambda f: (0 if f.status == "overdue" else 1, importance_order.get(f.importance, 1))
+            key=lambda f: (
+                0 if f.needs_attention or f.attention_status == "overdue" else 1,
+                lifecycle_order.get(f.status, 99),
+                importance_order.get(f.importance, 1),
+                -(getattr(f, "chapter_planted", 0) or 0),
+            )
         )
 
         return {

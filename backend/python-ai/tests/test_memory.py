@@ -134,7 +134,7 @@ class TestForeshadow:
             chapter_planted=10,
             content="神秘老人提到上古秘境",
             trigger_condition="主角达到100级",
-            status="active",
+            status="planted",
             importance="high",
         )
         await manager.add_foreshadow("s1", fs)
@@ -150,6 +150,44 @@ class TestForeshadow:
 
         result = await manager.resolve_foreshadow("s1", "fs-001")
         assert result is True
+
+        active = await manager.get_active_foreshadows("s1")
+        assert len(active) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_active_foreshadows_returns_open_lifecycle_statuses(self, manager):
+        for status in ["planned", "planted", "reinforced", "triggered", "revealed"]:
+            await manager.add_foreshadow(
+                "s1",
+                Foreshadow(id=f"fs-{status}", chapter_planted=1, content="test", status=status),
+            )
+        await manager.add_foreshadow(
+            "s1",
+            Foreshadow(id="fs-resolved", chapter_planted=1, content="test", status="resolved"),
+        )
+        await manager.add_foreshadow(
+            "s1",
+            Foreshadow(id="fs-abandoned", chapter_planted=1, content="test", status="abandoned"),
+        )
+
+        active = await manager.get_active_foreshadows("s1")
+        assert {f.status for f in active} == {
+            "planned",
+            "planted",
+            "reinforced",
+            "triggered",
+            "revealed",
+        }
+
+    @pytest.mark.asyncio
+    async def test_resolve_terminal_foreshadow_returns_false(self, manager):
+        await manager.add_foreshadow(
+            "s1",
+            Foreshadow(id="fs-001", chapter_planted=10, content="test", status="abandoned"),
+        )
+
+        result = await manager.resolve_foreshadow("s1", "fs-001")
+        assert result is False
 
         active = await manager.get_active_foreshadows("s1")
         assert len(active) == 0
@@ -228,12 +266,13 @@ class TestContextAssembly:
 
     @pytest.mark.asyncio
     async def test_foreshadow_overdue_sorting(self, manager):
-        """overdue 伏笔排在 active 之前"""
+        """overdue attention 伏笔排在普通 open 伏笔之前"""
         await manager.add_foreshadow("s1", Foreshadow(
             id="fs-active", chapter_planted=10, content="普通伏笔", importance="high",
         ))
         fs_overdue = Foreshadow(id="fs-overdue", chapter_planted=1, content="过期伏笔", importance="medium")
-        fs_overdue.status = "overdue"
+        fs_overdue.attention_status = "overdue"
+        fs_overdue.needs_attention = True
         await manager.add_foreshadow("s1", fs_overdue)
 
         ctx = await manager.assemble_context("s1")
@@ -248,19 +287,21 @@ class TestContextAssembly:
 class TestForeshadowAging:
     @pytest.mark.asyncio
     async def test_age_foreshadows_marks_overdue(self, manager):
-        """伏笔超过 max_age 后标记为 overdue"""
+        """伏笔超过 max_age 后标记为 overdue attention，不改变生命周期状态"""
         await manager.add_foreshadow("s1", Foreshadow(
             id="fs-001", chapter_planted=1, content="test", max_age=5,
         ))
 
         alerts = await manager.age_foreshadows("s1", current_chapter=7)
         assert len(alerts) == 1
-        assert alerts[0].status == "overdue"
+        assert alerts[0].status == "planted"
+        assert alerts[0].attention_status == "overdue"
+        assert alerts[0].needs_attention is True
         assert alerts[0].age == 6
 
     @pytest.mark.asyncio
     async def test_age_foreshadows_within_limit(self, manager):
-        """伏笔未超期时保持 active"""
+        """伏笔未超期时保持 open lifecycle status"""
         await manager.add_foreshadow("s1", Foreshadow(
             id="fs-001", chapter_planted=5, content="test", max_age=20,
         ))
@@ -271,6 +312,21 @@ class TestForeshadowAging:
         active = await manager.get_active_foreshadows("s1")
         assert len(active) == 1
         assert active[0].age == 5
+        assert active[0].status == "planted"
+        assert active[0].attention_status == "normal"
+
+    @pytest.mark.asyncio
+    async def test_legacy_overdue_status_is_normalized(self, manager):
+        await manager.add_foreshadow(
+            "s1",
+            Foreshadow(id="fs-overdue", chapter_planted=1, content="test", status="overdue"),
+        )
+
+        active = await manager.get_active_foreshadows("s1")
+        assert len(active) == 1
+        assert active[0].status == "planted"
+        assert active[0].attention_status == "overdue"
+        assert active[0].needs_attention is True
 
 
 # ========== Timeline Selection Tests ==========

@@ -3,6 +3,7 @@ import { CreationConsole } from './components/CreationConsole'
 import { LivePreview } from './components/LivePreview'
 import { AgentStatus } from './components/AgentStatus'
 import { GenerationHistory } from './components/GenerationHistory'
+import { NovelIdeaChat } from './components/NovelIdeaChat'
 import { useSSE } from './hooks/useSSE'
 import type { Chapter, Story } from './types'
 import './App.css'
@@ -13,6 +14,8 @@ function App() {
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null)
   const [historyPreview, setHistoryPreview] = useState('')
   const [chapterRefreshKey, setChapterRefreshKey] = useState(0)
+  const [storyRefreshKey, setStoryRefreshKey] = useState(0)
+  const [preferredStoryId, setPreferredStoryId] = useState<string | undefined>()
 
   const handleGenerate = useCallback((storyId: string, chapterId: string) => {
     setHistoryPreview('')
@@ -29,6 +32,13 @@ function App() {
     setSelectedChapter(chapter)
     setHistoryPreview('')
     setChapterRefreshKey((value) => value + 1)
+  }, [])
+
+  const handleStoryCreated = useCallback((story: Story) => {
+    setSelectedStory(story)
+    setSelectedChapter(null)
+    setPreferredStoryId(story.id)
+    setStoryRefreshKey((value) => value + 1)
   }, [])
 
   const isGenerating = state.status === 'generating' || state.status === 'connecting'
@@ -48,12 +58,15 @@ function App() {
 
       <main className="app-main">
         <div className="left-panel">
+          <NovelIdeaChat onStoryCreated={handleStoryCreated} />
           <CreationConsole
             onGenerate={handleGenerate}
             onCancel={cancel}
             onReset={reset}
             onSelectionChange={handleSelectionChange}
             refreshKey={chapterRefreshKey + state.completionSeq}
+            storyRefreshKey={storyRefreshKey}
+            preferredStoryId={preferredStoryId}
             status={state.status}
             errorMessage={state.errorMessage}
           />

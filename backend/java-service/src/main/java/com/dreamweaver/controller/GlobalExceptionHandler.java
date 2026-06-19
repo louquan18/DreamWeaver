@@ -6,7 +6,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.dreamweaver.service.AiWorkerException;
 import com.dreamweaver.service.BadRequestException;
+import com.dreamweaver.service.ConflictException;
 import com.dreamweaver.service.ResourceNotFoundException;
 
 @RestControllerAdvice
@@ -21,7 +23,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ApiError> handleBadRequest(BadRequestException ex) {
         return ResponseEntity.badRequest()
-            .body(ApiError.of("bad_request", ex.getMessage()));
+            .body(ApiError.of(ex.error(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiError> handleConflict(ConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(ApiError.of(ex.error(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(AiWorkerException.class)
+    public ResponseEntity<ApiError> handleAiWorker(AiWorkerException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+            .body(ApiError.of(ex.error(), ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

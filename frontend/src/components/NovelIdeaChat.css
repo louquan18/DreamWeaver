@@ -1,0 +1,417 @@
+.idea-chat {
+  background:
+    radial-gradient(circle at top left, rgba(65, 191, 179, 0.18), transparent 34%),
+    #151824;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  color: #edf2f7;
+  padding: 18px;
+}
+
+.idea-chat-header,
+.idea-chat-tools,
+.summary-head,
+.blueprint-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.idea-chat-kicker {
+  color: #78d8ca;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  margin: 0 0 4px 0;
+  text-transform: uppercase;
+}
+
+.idea-chat h2,
+.idea-chat h3 {
+  margin: 0;
+}
+
+.idea-chat h2 {
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.idea-chat-state {
+  border: 1px solid #344154;
+  border-radius: 999px;
+  color: #a9b8ce;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 9px;
+  text-transform: uppercase;
+}
+
+.idea-chat-state.loading {
+  border-color: rgba(120, 216, 202, 0.55);
+  color: #78d8ca;
+}
+
+.idea-chat-state.success {
+  border-color: rgba(75, 210, 138, 0.5);
+  color: #67d391;
+}
+
+.idea-chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.idea-chat-form label {
+  color: #a9b8ce;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.idea-chat input,
+.idea-chat textarea {
+  background: #0d111c;
+  border: 1px solid #344154;
+  border-radius: 8px;
+  color: #f7fafc;
+  font-size: 14px;
+  line-height: 1.55;
+  outline: none;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.idea-chat input {
+  min-height: 38px;
+}
+
+.idea-chat input::placeholder,
+.idea-chat textarea::placeholder {
+  color: #65748a;
+}
+
+.idea-chat input:focus,
+.idea-chat textarea:focus {
+  border-color: #78d8ca;
+  box-shadow: 0 0 0 3px rgba(120, 216, 202, 0.1);
+}
+
+.idea-chat input:disabled,
+.idea-chat textarea:disabled,
+.idea-chat button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.idea-chat-tools span {
+  color: #77849a;
+  font-size: 12px;
+}
+
+.idea-chat button {
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.idea-chat-tools button {
+  background: #2bb3a3;
+  color: #07120f;
+  min-height: 40px;
+  padding: 0 14px;
+}
+
+.idea-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.idea-samples button {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #2d3748;
+  color: #b9c7da;
+  line-height: 1.45;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.idea-chat-loading {
+  align-items: center;
+  background: rgba(120, 216, 202, 0.08);
+  border: 1px solid rgba(120, 216, 202, 0.28);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.idea-chat-loading span {
+  animation: idea-spin 0.8s linear infinite;
+  border: 3px solid rgba(120, 216, 202, 0.25);
+  border-radius: 50%;
+  border-top-color: #78d8ca;
+  flex-shrink: 0;
+  height: 28px;
+  width: 28px;
+}
+
+.idea-chat-loading strong {
+  color: #dffbf7;
+  display: block;
+  font-size: 13px;
+}
+
+.idea-chat-loading p {
+  color: #9fb0c6;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 3px 0 0 0;
+}
+
+@keyframes idea-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.idea-chat-message {
+  border-radius: 6px;
+  font-size: 13px;
+  margin-top: 12px;
+  padding: 10px 12px;
+}
+
+.idea-chat-message.error {
+  background: rgba(209, 73, 91, 0.12);
+  border: 1px solid rgba(209, 73, 91, 0.35);
+  color: #ff9aa7;
+}
+
+.idea-chat-message.success {
+  background: rgba(75, 210, 138, 0.1);
+  border: 1px solid rgba(75, 210, 138, 0.28);
+  color: #8ee0ae;
+}
+
+.blueprint-summary {
+  border-top: 1px solid #2d3748;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.summary-head {
+  align-items: flex-start;
+}
+
+.summary-head span {
+  color: #78d8ca;
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.summary-head h3 {
+  color: #f7fafc;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.summary-head strong {
+  background: rgba(75, 210, 138, 0.12);
+  border: 1px solid rgba(75, 210, 138, 0.3);
+  border-radius: 999px;
+  color: #67d391;
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 14px 0 0 0;
+}
+
+.summary-grid div {
+  background: #0f1420;
+  border: 1px solid #273246;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.summary-grid dt,
+.locked-facts span {
+  color: #8291a8;
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.summary-grid dd {
+  color: #d9e3ef;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.blueprint-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.blueprint-form.nested {
+  margin-top: 10px;
+}
+
+.blueprint-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.blueprint-form label span,
+.blueprint-group-title {
+  color: #8291a8;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.blueprint-form .field-wide,
+.blueprint-group.field-wide {
+  grid-column: 1 / -1;
+}
+
+.blueprint-group {
+  background: rgba(13, 17, 28, 0.55);
+  border: 1px solid #273246;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.blueprint-group-title {
+  color: #78d8ca;
+}
+
+.locked-facts {
+  margin-top: 12px;
+}
+
+.locked-facts div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.locked-facts em {
+  background: rgba(236, 169, 75, 0.1);
+  border: 1px solid rgba(236, 169, 75, 0.3);
+  border-radius: 999px;
+  color: #eec27b;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+  padding: 6px 9px;
+}
+
+.blueprint-issues {
+  background: rgba(236, 169, 75, 0.08);
+  border: 1px solid rgba(236, 169, 75, 0.28);
+  border-radius: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+}
+
+.blueprint-issues span {
+  color: #eec27b;
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.blueprint-issues p {
+  color: #e7d5b6;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 4px 0 0 0;
+}
+
+.blueprint-next {
+  align-items: center;
+  border-top: 1px solid #2d3748;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.blueprint-next div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.blueprint-next button {
+  background: #344154;
+  color: #d7e0ec;
+  flex-shrink: 0;
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.blueprint-next button.confirm {
+  background: #2bb3a3;
+  color: #07120f;
+}
+
+.blueprint-next p {
+  color: #8291a8;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+  text-align: right;
+}
+
+@media (max-width: 520px) {
+  .idea-chat-header,
+  .idea-chat-tools,
+  .summary-head,
+  .blueprint-next {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .idea-chat-state,
+  .idea-chat-tools button,
+  .blueprint-next button {
+    width: 100%;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .blueprint-form {
+    grid-template-columns: 1fr;
+  }
+
+  .blueprint-next p {
+    text-align: left;
+  }
+}

@@ -13,6 +13,7 @@ from src.core.config import settings
 
 # 各 Agent 的主模型 / fallback 备用模型（取自配置，env 可覆盖）
 _AGENT_PRIMARY = {
+    "blueprint": lambda: settings.model_planner,
     "planner": lambda: settings.model_planner,
     "writer": lambda: settings.model_writer,
     "consistency": lambda: settings.model_consistency,
@@ -21,6 +22,7 @@ _AGENT_PRIMARY = {
     "context": lambda: settings.model_context,
 }
 _AGENT_FALLBACK = {
+    "blueprint": lambda: settings.model_planner_fallback,
     "planner": lambda: settings.model_planner_fallback,
     "writer": lambda: settings.model_writer_fallback,
     "consistency": lambda: settings.model_consistency_fallback,
@@ -30,6 +32,7 @@ _AGENT_FALLBACK = {
 }
 # 不同任务使用不同温度
 _AGENT_TEMPERATURE = {
+    "blueprint": 0.4,
     "planner": 0.5,
     "writer": 0.8,
     "consistency": 0.1,

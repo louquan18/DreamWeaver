@@ -1,5 +1,8 @@
 """Memory Schema 测试"""
 
+import pytest
+from pydantic import ValidationError
+
 from src.memory.schema import (
     CharacterState,
     CompressionResult,
@@ -34,7 +37,42 @@ def test_relationship():
 
 def test_foreshadow():
     f = Foreshadow(id="fs-1", chapter_planted=10, content="test")
-    assert f.status == "active"  # default
+    assert f.status == "planted"  # default
+    assert f.attention_status == "normal"
+    assert f.needs_attention is False
+
+
+def test_foreshadow_lifecycle_statuses():
+    for status in [
+        "planned",
+        "planted",
+        "reinforced",
+        "triggered",
+        "revealed",
+        "resolved",
+        "abandoned",
+    ]:
+        f = Foreshadow(id=f"fs-{status}", chapter_planted=1, content="test", status=status)
+        assert f.status == status
+
+
+def test_foreshadow_rejects_invalid_lifecycle_status():
+    with pytest.raises(ValidationError):
+        Foreshadow(id="fs-invalid", chapter_planted=1, content="test", status="overdue_lifecycle")
+
+
+def test_foreshadow_legacy_active_maps_to_planted():
+    f = Foreshadow(id="fs-active", chapter_planted=1, content="test", status="active")
+    assert f.status == "planted"
+    assert f.attention_status == "normal"
+    assert f.needs_attention is False
+
+
+def test_foreshadow_legacy_overdue_maps_to_attention_status():
+    f = Foreshadow(id="fs-overdue", chapter_planted=1, content="test", status="overdue")
+    assert f.status == "planted"
+    assert f.attention_status == "overdue"
+    assert f.needs_attention is True
 
 
 def test_world_state():
@@ -57,6 +95,3 @@ def test_compression_result_rate():
     )
     rate = r.calculate_rate()
     assert rate == pytest.approx(0.4)
-
-
-import pytest

@@ -1,4 +1,16 @@
-import type { Chapter, ChapterGeneration, GenerateRequest, GenerateResponse, Story } from '../types'
+import type {
+  BlueprintConfirmRequest,
+  BlueprintConfirmResult,
+  BlueprintGenerateRequest,
+  BlueprintGenerateResult,
+  BlueprintUpdateRequest,
+  Chapter,
+  ChapterGeneration,
+  GenerateRequest,
+  GenerateResponse,
+  NovelBlueprint,
+  Story,
+} from '../types'
 
 const API_BASE = ''
 
@@ -45,6 +57,77 @@ export async function createStory(input: {
   }
 
   return res.json()
+}
+
+export async function generateNovelBlueprint(
+  storyId: string,
+  req: BlueprintGenerateRequest,
+): Promise<BlueprintGenerateResult> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/blueprints/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(req),
+  })
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to generate blueprint'))
+  }
+
+  const data = await res.json()
+  return normalizeBlueprintGenerateResult(data)
+}
+
+export async function getCurrentNovelBlueprint(storyId: string): Promise<NovelBlueprint> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/blueprints/current`)
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to load current blueprint'))
+  }
+
+  return res.json()
+}
+
+export async function updateNovelBlueprint(
+  storyId: string,
+  blueprintId: string,
+  req: BlueprintUpdateRequest,
+): Promise<NovelBlueprint> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/blueprints/${blueprintId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(req),
+  })
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to save blueprint edits'))
+  }
+
+  return res.json()
+}
+
+export async function confirmNovelBlueprint(
+  storyId: string,
+  blueprintId: string,
+  req: BlueprintConfirmRequest = {},
+): Promise<BlueprintConfirmResult> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/blueprints/${blueprintId}/confirm`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(req),
+  })
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to confirm blueprint'))
+  }
+
+  const data = await res.json()
+  return normalizeBlueprintResult(data)
 }
 
 export async function listChapters(storyId: string): Promise<Chapter[]> {
@@ -111,6 +194,47 @@ export async function createChapterGeneration(req: GenerateRequest): Promise<Cha
   }
 
   return res.json()
+}
+
+async function readErrorMessage(res: Response, fallback: string) {
+  const error = await res.json().catch(() => null)
+  if (!error) return fallback
+  if (typeof error.message === 'string') return error.message
+  if (typeof error.error === 'string') return error.error
+  if (typeof error.detail === 'string') return error.detail
+  if (error.detail && typeof error.detail.message === 'string') return error.detail.message
+  return fallback
+}
+
+function normalizeBlueprintGenerateResult(data: unknown): BlueprintGenerateResult {
+  if (isRecord(data) && isRecord(data.blueprint)) {
+    return normalizeBlueprintResult(data)
+  }
+
+  return {
+    blueprint: data as NovelBlueprint,
+  }
+}
+
+function normalizeBlueprintResult(data: unknown): BlueprintConfirmResult {
+  if (isRecord(data) && isRecord(data.blueprint)) {
+    return {
+      story: isStoryLike(data.story) ? data.story : undefined,
+      blueprint: data.blueprint as unknown as NovelBlueprint,
+    }
+  }
+
+  return {
+    blueprint: data as NovelBlueprint,
+  }
+}
+
+function isStoryLike(value: unknown): value is Story {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.title === 'string'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 export async function listChapterGenerations(

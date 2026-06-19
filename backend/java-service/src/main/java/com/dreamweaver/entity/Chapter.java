@@ -1,5 +1,6 @@
 package com.dreamweaver.entity;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -37,6 +38,12 @@ public class Chapter extends BaseEntity {
 
     @Column(nullable = false, length = 20)
     private ChapterStatus status = ChapterStatus.DRAFT;
+
+    @Column(name = "workflow_stage", nullable = false, length = 50)
+    private ChapterWorkflowStage workflowStage = ChapterWorkflowStage.CHAPTER_CREATED;
+
+    @Column(name = "confirmed_at")
+    private OffsetDateTime confirmedAt;
 
     @Column(name = "last_generation_id")
     private UUID lastGenerationId;
@@ -95,6 +102,22 @@ public class Chapter extends BaseEntity {
 
     public void setStatus(ChapterStatus status) {
         this.status = status;
+    }
+
+    public ChapterWorkflowStage getWorkflowStage() {
+        return workflowStage;
+    }
+
+    public void setWorkflowStage(ChapterWorkflowStage workflowStage) {
+        this.workflowStage = workflowStage;
+    }
+
+    public OffsetDateTime getConfirmedAt() {
+        return confirmedAt;
+    }
+
+    public void setConfirmedAt(OffsetDateTime confirmedAt) {
+        this.confirmedAt = confirmedAt;
     }
 
     public UUID getLastGenerationId() {
