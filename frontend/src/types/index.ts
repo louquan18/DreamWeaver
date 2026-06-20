@@ -283,3 +283,61 @@ export interface ChapterOutlineOptionsGenerateResult {
   chapter: Chapter
   options: ChapterOutlineOption[]
 }
+
+export type MemoryChangeType = 'timeline' | 'character' | 'world' | 'foreshadow'
+
+export type MemoryChange = Record<string, unknown>
+
+export interface MemoryChangeSet {
+  id: string
+  storyId?: string
+  story_id?: string
+  chapterId?: string
+  chapter_id?: string
+  status: string
+  timelineChanges?: MemoryChange[]
+  timeline_changes?: MemoryChange[]
+  characterChanges?: MemoryChange[]
+  character_changes?: MemoryChange[]
+  worldChanges?: MemoryChange[]
+  world_changes?: MemoryChange[]
+  foreshadowChanges?: MemoryChange[]
+  foreshadow_changes?: MemoryChange[]
+  changes?: Partial<Record<MemoryChangeType, MemoryChange[]>>
+  summary?: string
+  errorMessage?: string
+  error_message?: string
+  extractedAt?: string
+  confirmedAt?: string
+  frozenAt?: string
+  createdAt?: string
+  updatedAt?: string
+  extracted_at?: string
+  confirmed_at?: string
+  frozen_at?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface MemoryChangeSetUpdateRequest {
+  timelineChanges?: MemoryChange[]
+  timeline_changes?: MemoryChange[]
+  characterChanges?: MemoryChange[]
+  character_changes?: MemoryChange[]
+  worldChanges?: MemoryChange[]
+  world_changes?: MemoryChange[]
+  foreshadowChanges?: MemoryChange[]
+  foreshadow_changes?: MemoryChange[]
+}
+
+export interface MemoryChangeSetResult {
+  chapter?: Chapter
+  memoryChangeSet: MemoryChangeSet
+  memory_change_set?: MemoryChangeSet
+}
+
+export interface MemoryFreezeResult {
+  chapter: Chapter
+  memoryChangeSet: MemoryChangeSet
+  memory_change_set?: MemoryChangeSet
+}

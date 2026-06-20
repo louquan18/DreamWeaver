@@ -9,7 +9,7 @@ from loguru import logger
 from src.core.config import settings
 from src.core.logging import setup_logging
 
-from .routes import blueprints, chapters, drafts, health, outlines
+from .routes import blueprints, chapters, drafts, health, memory_changes, outlines
 
 
 @asynccontextmanager
@@ -43,3 +43,4 @@ app.include_router(chapters.router)
 app.include_router(blueprints.router)
 app.include_router(outlines.router)
 app.include_router(drafts.router)
+app.include_router(memory_changes.router)

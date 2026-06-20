@@ -25,12 +25,15 @@ import com.dreamweaver.dto.ChapterOutlineOptionsGenerateRequest;
 import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.ChapterOutlineOption;
 import com.dreamweaver.entity.ChapterWorkflowStage;
+import com.dreamweaver.entity.NovelBlueprint;
+import com.dreamweaver.entity.NovelBlueprintStatus;
 import com.dreamweaver.entity.OutlineOptionCode;
 import com.dreamweaver.entity.OutlineOptionStatus;
 import com.dreamweaver.entity.Story;
 import com.dreamweaver.entity.StoryStatus;
 import com.dreamweaver.repository.ChapterOutlineOptionRepository;
 import com.dreamweaver.repository.ChapterRepository;
+import com.dreamweaver.repository.NovelBlueprintRepository;
 import com.dreamweaver.repository.StoryRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,6 +47,9 @@ class ChapterOutlineOptionServiceTests {
 
     @Mock
     private ChapterRepository chapterRepository;
+
+    @Mock
+    private NovelBlueprintRepository blueprintRepository;
 
     @Mock
     private ChapterOutlineOptionRepository optionRepository;
@@ -60,6 +66,7 @@ class ChapterOutlineOptionServiceTests {
         service = new ChapterOutlineOptionService(
             storyRepository,
             chapterRepository,
+            blueprintRepository,
             optionRepository,
             aiOutlineClient
         );
@@ -70,6 +77,7 @@ class ChapterOutlineOptionServiceTests {
     @Test
     void generateSavesThreeOptionsAndMarksChapterOutlineOptionsGenerated() {
         arrangeStoryAndChapter();
+        arrangeConfirmedBlueprint();
         when(aiOutlineClient.generateOutlineOptions(any(), any(), any(AiOutlineOptionsGenerateRequest.class)))
             .thenAnswer(invocation -> {
                 AiOutlineOptionsGenerateRequest request = invocation.getArgument(2);
@@ -97,8 +105,45 @@ class ChapterOutlineOptionServiceTests {
     }
 
     @Test
+    void generateSendsConfirmedBlueprintAndRecentChaptersToAiWorker() {
+        Chapter previous = previousChapter();
+        arrangeStoryAndChapter();
+        arrangeConfirmedBlueprint();
+        when(chapterRepository.findByStoryIdOrderByChapterNumberAsc(STORY_ID)).thenReturn(List.of(
+            previous,
+            chapter
+        ));
+        when(aiOutlineClient.generateOutlineOptions(any(), any(), any(AiOutlineOptionsGenerateRequest.class)))
+            .thenAnswer(invocation -> {
+                AiOutlineOptionsGenerateRequest request = invocation.getArgument(2);
+
+                assertThat(request.story()).containsEntry("title", "Test Story");
+                assertThat(request.chapter()).containsEntry("chapterNumber", 2);
+                assertThat(request.blueprint()).containsEntry("premise", "A gatekeeper finds a false envoy.");
+                assertThat(request.recentChapters()).hasSize(1);
+                assertThat(request.recentChapters().get(0))
+                    .containsEntry("title", "Old Gate")
+                    .containsEntry("content", "Ming sealed the old gate.");
+                assertThat(request.timeline()).isEmpty();
+                assertThat(request.characters()).isEmpty();
+                assertThat(request.world()).isEmpty();
+                assertThat(request.foreshadows()).isEmpty();
+                assertThat(request.additionalMemory()).isEmpty();
+                return generated(CHAPTER_ID.toString(), request.optionGroupId());
+            });
+        when(optionRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.generate(
+            STORY_ID,
+            CHAPTER_ID,
+            new ChapterOutlineOptionsGenerateRequest(Map.of("goal", "open with pressure"))
+        );
+    }
+
+    @Test
     void generateRejectsAiOptionsForDifferentChapter() {
         arrangeStoryAndChapter();
+        arrangeConfirmedBlueprint();
         when(aiOutlineClient.generateOutlineOptions(any(), any(), any(AiOutlineOptionsGenerateRequest.class)))
             .thenAnswer(invocation -> {
                 AiOutlineOptionsGenerateRequest request = invocation.getArgument(2);
@@ -116,6 +161,13 @@ class ChapterOutlineOptionServiceTests {
     private void arrangeStoryAndChapter() {
         when(storyRepository.findById(STORY_ID)).thenReturn(Optional.of(story));
         when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+    }
+
+    private void arrangeConfirmedBlueprint() {
+        when(blueprintRepository.findFirstByStoryIdAndStatusOrderByCreatedAtDesc(
+            STORY_ID,
+            NovelBlueprintStatus.CONFIRMED
+        )).thenReturn(Optional.of(blueprint()));
     }
 
     private AiOutlineOptionsGenerateResponse generated(String chapterId, String groupId) {
@@ -167,6 +219,9 @@ class ChapterOutlineOptionServiceTests {
         story.setId(STORY_ID);
         story.setUserId(UUID.fromString("00000000-0000-0000-0000-000000000001"));
         story.setTitle("Test Story");
+        story.setDescription("A test story about a suspicious gate.");
+        story.setGenre("xianxia");
+        story.setTargetWords(200000);
         story.setStatus(StoryStatus.WRITING);
         return story;
     }
@@ -175,8 +230,38 @@ class ChapterOutlineOptionServiceTests {
         Chapter chapter = new Chapter();
         chapter.setId(CHAPTER_ID);
         chapter.setStoryId(STORY_ID);
-        chapter.setChapterNumber(1);
+        chapter.setChapterNumber(2);
+        chapter.setTitle("The False Envoy");
         chapter.setWorkflowStage(ChapterWorkflowStage.OUTLINE_OPTIONS_GENERATING);
         return chapter;
+    }
+
+    private Chapter previousChapter() {
+        Chapter previous = new Chapter();
+        previous.setId(UUID.fromString("30000000-0000-0000-0000-000000000070"));
+        previous.setStoryId(STORY_ID);
+        previous.setChapterNumber(1);
+        previous.setTitle("Old Gate");
+        previous.setContent("Ming sealed the old gate.");
+        previous.setWordCount(10);
+        return previous;
+    }
+
+    private NovelBlueprint blueprint() {
+        NovelBlueprint blueprint = new NovelBlueprint();
+        blueprint.setId(UUID.fromString("40000000-0000-0000-0000-000000000070"));
+        blueprint.setStoryId(STORY_ID);
+        blueprint.setSourcePrompt("gate mystery");
+        blueprint.setPremise("A gatekeeper finds a false envoy.");
+        blueprint.setGenre("xianxia");
+        blueprint.setTone("tense");
+        blueprint.setProtagonist(Map.of("name", "Ming"));
+        blueprint.setMainThread(Map.of("goal", "Expose the envoy"));
+        blueprint.setCoreConflict(Map.of("external", "The sect gate is compromised"));
+        blueprint.setWorldSeed(Map.of("rules", List.of("Blood seals answer only to heirs")));
+        blueprint.setWritingPreferences(Map.of("pacing", "fast"));
+        blueprint.setLockedFacts(List.of(Map.<String, Object>of("text", "The gate cannot lie.")));
+        blueprint.setStatus(NovelBlueprintStatus.CONFIRMED);
+        return blueprint;
     }
 }

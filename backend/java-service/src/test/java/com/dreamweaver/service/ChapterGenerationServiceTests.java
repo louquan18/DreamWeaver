@@ -108,6 +108,19 @@ class ChapterGenerationServiceTests {
     }
 
     @Test
+    void createRejectsDraftGenerationAfterChapterConfirmed() {
+        Chapter chapter = chapter(ChapterWorkflowStage.CHAPTER_CONFIRMED);
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+
+        assertThatThrownBy(() -> service.create(STORY_ID, CHAPTER_ID, request()))
+            .isInstanceOf(ConflictException.class)
+            .hasMessageContaining("already been confirmed and frozen");
+
+        verify(generationRepository, never()).save(any(ChapterGeneration.class));
+    }
+
+    @Test
     void confirmDraftStoresSucceededGenerationAndMarksDraftConfirmed() {
         Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
         ChapterGeneration generation = succeededGeneration(GENERATION_ID, "The dream fire answered.");

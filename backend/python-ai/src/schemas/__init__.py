@@ -22,6 +22,25 @@ from .draft import (
     draft_generate_request_json_schema,
     draft_generate_result_json_schema,
 )
+from .memory import (
+    MEMORY_EXTRACTION_RESULT_JSON_SCHEMA,
+    BaseMemoryChange,
+    CharacterMemoryChange,
+    ForeshadowMemoryChange,
+    MemoryChange,
+    MemoryChangeOperation,
+    MemoryChangeType,
+    MemoryConflictHint,
+    MemoryEvidence,
+    MemoryExtractionResult,
+    MemoryExtractionStatus,
+    MemoryExtractionWarning,
+    MemorySourceSpan,
+    MemoryWarningCode,
+    TimelineMemoryChange,
+    WorldMemoryChange,
+    memory_extraction_result_json_schema,
+)
 from .outline import (
     CHAPTER_OUTLINE_CONTENT_JSON_SCHEMA,
     CHAPTER_OUTLINE_OPTION_JSON_SCHEMA,
@@ -35,15 +54,6 @@ from .outline import (
     chapter_outline_option_json_schema,
     chapter_outline_options_json_schema,
 )
-from .review import (
-    DRAFT_QUALITY_REVIEW_JSON_SCHEMA,
-    DraftQualityReviewReport,
-    ReviewIssue,
-    ReviewIssueCategory,
-    ReviewIssueLocation,
-    ReviewSeverity,
-    draft_quality_review_json_schema,
-)
 from .repair import (
     DRAFT_REPAIR_REQUEST_JSON_SCHEMA,
     DRAFT_REPAIR_RESULT_JSON_SCHEMA,
@@ -52,6 +62,15 @@ from .repair import (
     RepairStrategy,
     draft_repair_request_json_schema,
     draft_repair_result_json_schema,
+)
+from .review import (
+    DRAFT_QUALITY_REVIEW_JSON_SCHEMA,
+    DraftQualityReviewReport,
+    ReviewIssue,
+    ReviewIssueCategory,
+    ReviewIssueLocation,
+    ReviewSeverity,
+    draft_quality_review_json_schema,
 )
 
 __all__ = [
@@ -66,6 +85,9 @@ __all__ = [
     "DRAFT_REPAIR_REQUEST_JSON_SCHEMA",
     "DRAFT_REPAIR_RESULT_JSON_SCHEMA",
     "DEFAULT_DRAFT_TARGET_WORDS",
+    "MEMORY_EXTRACTION_RESULT_JSON_SCHEMA",
+    "BaseMemoryChange",
+    "CharacterMemoryChange",
     "ChapterOutlineContent",
     "ChapterOutlineDraft",
     "ChapterOutlineOptionDraft",
@@ -82,13 +104,26 @@ __all__ = [
     "DraftGenerateResult",
     "DraftRepairRequest",
     "DraftRepairResult",
+    "ForeshadowMemoryChange",
     "LightBlueprintGenerateRequest",
+    "MemoryChange",
+    "MemoryChangeOperation",
+    "MemoryChangeType",
+    "MemoryConflictHint",
+    "MemoryEvidence",
+    "MemoryExtractionResult",
+    "MemoryExtractionStatus",
+    "MemoryExtractionWarning",
+    "MemorySourceSpan",
+    "MemoryWarningCode",
     "NovelBlueprintDraft",
     "RepairStrategy",
     "ReviewIssue",
     "ReviewIssueCategory",
     "ReviewIssueLocation",
     "ReviewSeverity",
+    "TimelineMemoryChange",
+    "WorldMemoryChange",
     "chapter_outline_content_json_schema",
     "chapter_outline_option_json_schema",
     "chapter_outline_options_json_schema",
@@ -99,4 +134,5 @@ __all__ = [
     "draft_quality_review_json_schema",
     "draft_repair_request_json_schema",
     "draft_repair_result_json_schema",
+    "memory_extraction_result_json_schema",
 ]

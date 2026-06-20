@@ -43,8 +43,7 @@ public class ChapterGenerationService {
         ChapterWorkflowStage.DRAFT_CONFIRMED,
         ChapterWorkflowStage.MEMORY_EXTRACTING,
         ChapterWorkflowStage.MEMORY_PENDING_CONFIRMATION,
-        ChapterWorkflowStage.MEMORY_CONFIRMED,
-        ChapterWorkflowStage.CHAPTER_CONFIRMED
+        ChapterWorkflowStage.MEMORY_CONFIRMED
     );
 
     private static final Set<ChapterWorkflowStage> DRAFT_LOCKED_STAGES = EnumSet.of(
@@ -195,6 +194,12 @@ public class ChapterGenerationService {
     }
 
     private void assertOutlineConfirmed(Chapter chapter) {
+        if (chapter.getWorkflowStage() == ChapterWorkflowStage.CHAPTER_CONFIRMED) {
+            throw new ConflictException(
+                "chapter_already_confirmed",
+                "Chapter has already been confirmed and frozen: " + chapter.getId()
+            );
+        }
         if (!DRAFT_GENERATION_ALLOWED_STAGES.contains(chapter.getWorkflowStage())) {
             throw new BadRequestException(
                 OUTLINE_NOT_CONFIRMED,

@@ -1,6 +1,8 @@
 package com.dreamweaver.service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -13,11 +15,15 @@ import com.dreamweaver.dto.ChapterOutlineOptionsGenerateRequest;
 import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.ChapterOutlineOption;
 import com.dreamweaver.entity.ChapterWorkflowStage;
+import com.dreamweaver.entity.NovelBlueprint;
+import com.dreamweaver.entity.NovelBlueprintStatus;
 import com.dreamweaver.entity.OutlineOptionCode;
 import com.dreamweaver.entity.OutlineOptionStatus;
 import com.dreamweaver.entity.OutlineOptionType;
+import com.dreamweaver.entity.Story;
 import com.dreamweaver.repository.ChapterOutlineOptionRepository;
 import com.dreamweaver.repository.ChapterRepository;
+import com.dreamweaver.repository.NovelBlueprintRepository;
 import com.dreamweaver.repository.StoryRepository;
 
 @Service
@@ -27,17 +33,20 @@ public class ChapterOutlineOptionService {
 
     private final StoryRepository storyRepository;
     private final ChapterRepository chapterRepository;
+    private final NovelBlueprintRepository blueprintRepository;
     private final ChapterOutlineOptionRepository optionRepository;
     private final AiOutlineClient aiOutlineClient;
 
     public ChapterOutlineOptionService(
         StoryRepository storyRepository,
         ChapterRepository chapterRepository,
+        NovelBlueprintRepository blueprintRepository,
         ChapterOutlineOptionRepository optionRepository,
         AiOutlineClient aiOutlineClient
     ) {
         this.storyRepository = storyRepository;
         this.chapterRepository = chapterRepository;
+        this.blueprintRepository = blueprintRepository;
         this.optionRepository = optionRepository;
         this.aiOutlineClient = aiOutlineClient;
     }
@@ -48,8 +57,9 @@ public class ChapterOutlineOptionService {
         UUID chapterId,
         ChapterOutlineOptionsGenerateRequest request
     ) {
-        getStory(storyId);
+        Story story = getStory(storyId);
         Chapter chapter = getChapter(storyId, chapterId);
+        NovelBlueprint blueprint = getConfirmedBlueprint(storyId);
         UUID optionGroupId = UUID.randomUUID();
 
         AiOutlineOptionsGenerateResponse generated = aiOutlineClient.generateOutlineOptions(
@@ -57,7 +67,16 @@ public class ChapterOutlineOptionService {
             chapterId,
             new AiOutlineOptionsGenerateRequest(
                 optionGroupId.toString(),
-                request == null ? null : request.authorIntent()
+                storyContext(story),
+                chapterContext(chapter),
+                blueprintContext(blueprint),
+                request == null ? null : request.authorIntent(),
+                recentChapterContexts(storyId, chapter),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of()
             )
         );
         validateGeneratedResponse(storyId, chapterId, optionGroupId, generated);
@@ -73,14 +92,85 @@ public class ChapterOutlineOptionService {
         return new GeneratedOutlineOptions(chapter, savedOptions);
     }
 
-    private void getStory(UUID storyId) {
-        storyRepository.findById(storyId)
+    private Story getStory(UUID storyId) {
+        return storyRepository.findById(storyId)
             .orElseThrow(() -> new ResourceNotFoundException("Story not found: " + storyId));
     }
 
     private Chapter getChapter(UUID storyId, UUID chapterId) {
         return chapterRepository.findByIdAndStoryId(chapterId, storyId)
             .orElseThrow(() -> new ResourceNotFoundException("Chapter not found: " + chapterId));
+    }
+
+    private NovelBlueprint getConfirmedBlueprint(UUID storyId) {
+        return blueprintRepository
+            .findFirstByStoryIdAndStatusOrderByCreatedAtDesc(storyId, NovelBlueprintStatus.CONFIRMED)
+            .orElseThrow(() -> new BadRequestException(
+                "blueprint_not_confirmed",
+                "Story blueprint must be confirmed before outline generation: " + storyId
+            ));
+    }
+
+    private Map<String, Object> storyContext(Story story) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("id", story.getId());
+        values.put("title", story.getTitle());
+        values.put("description", story.getDescription());
+        values.put("genre", story.getGenre());
+        values.put("targetWords", story.getTargetWords());
+        values.put("status", story.getStatus().value());
+        return values;
+    }
+
+    private Map<String, Object> chapterContext(Chapter chapter) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("id", chapter.getId());
+        values.put("storyId", chapter.getStoryId());
+        values.put("chapterNumber", chapter.getChapterNumber());
+        values.put("title", chapter.getTitle());
+        values.put("status", chapter.getStatus().value());
+        values.put("workflowStage", chapter.getWorkflowStage().value());
+        return values;
+    }
+
+    private Map<String, Object> blueprintContext(NovelBlueprint blueprint) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("id", blueprint.getId());
+        values.put("storyId", blueprint.getStoryId());
+        values.put("sourcePrompt", blueprint.getSourcePrompt());
+        values.put("premise", blueprint.getPremise());
+        values.put("genre", blueprint.getGenre());
+        values.put("tone", blueprint.getTone());
+        values.put("protagonist", blueprint.getProtagonist());
+        values.put("mainThread", blueprint.getMainThread());
+        values.put("coreConflict", blueprint.getCoreConflict());
+        values.put("worldSeed", blueprint.getWorldSeed());
+        values.put("writingPreferences", blueprint.getWritingPreferences());
+        values.put("lockedFacts", blueprint.getLockedFacts());
+        values.put("status", blueprint.getStatus().value());
+        return values;
+    }
+
+    private List<Map<String, Object>> recentChapterContexts(UUID storyId, Chapter currentChapter) {
+        return chapterRepository.findByStoryIdOrderByChapterNumberAsc(storyId).stream()
+            .filter(chapter -> chapter.getChapterNumber() != null
+                && currentChapter.getChapterNumber() != null
+                && chapter.getChapterNumber() < currentChapter.getChapterNumber())
+            .filter(chapter -> chapter.getContent() != null && !chapter.getContent().isBlank())
+            .sorted((left, right) -> Integer.compare(right.getChapterNumber(), left.getChapterNumber()))
+            .limit(3)
+            .map(this::recentChapterContext)
+            .toList();
+    }
+
+    private Map<String, Object> recentChapterContext(Chapter chapter) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("id", chapter.getId());
+        values.put("chapterNumber", chapter.getChapterNumber());
+        values.put("title", chapter.getTitle());
+        values.put("content", chapter.getContent());
+        values.put("wordCount", chapter.getWordCount());
+        return values;
     }
 
     private void validateGeneratedResponse(

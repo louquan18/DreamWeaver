@@ -13,6 +13,10 @@ import type {
   ChapterOutlineOptionsGenerateResult,
   GenerateRequest,
   GenerateResponse,
+  MemoryChangeSet,
+  MemoryChangeSetResult,
+  MemoryChangeSetUpdateRequest,
+  MemoryFreezeResult,
   NovelBlueprint,
   Story,
 } from '../types'
@@ -365,6 +369,117 @@ export async function generateChapterOutlineOptions(
   return res.json()
 }
 
+export async function extractMemoryChangeSet(
+  storyId: string,
+  chapterId: string,
+): Promise<MemoryChangeSetResult> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/memory-change-sets/extract`,
+    {
+      method: 'POST',
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to extract memory changes'))
+  }
+
+  return normalizeMemoryChangeSetResult(await res.json())
+}
+
+export async function listMemoryChangeSets(
+  storyId: string,
+  chapterId: string,
+): Promise<MemoryChangeSet[]> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/memory-change-sets`,
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to load memory change sets'))
+  }
+
+  return res.json()
+}
+
+export async function getMemoryChangeSet(
+  storyId: string,
+  chapterId: string,
+  changeSetId: string,
+): Promise<MemoryChangeSet> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/memory-change-sets/${changeSetId}`,
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to load memory change set'))
+  }
+
+  return res.json()
+}
+
+export async function updateMemoryChangeSet(
+  storyId: string,
+  chapterId: string,
+  changeSetId: string,
+  req: MemoryChangeSetUpdateRequest,
+): Promise<MemoryChangeSet> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/memory-change-sets/${changeSetId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req),
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to save memory changes'))
+  }
+
+  return res.json()
+}
+
+export async function confirmMemoryChangeSet(
+  storyId: string,
+  chapterId: string,
+  changeSetId: string,
+): Promise<MemoryChangeSetResult> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/memory-change-sets/${changeSetId}/confirm`,
+    {
+      method: 'POST',
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to confirm memory changes'))
+  }
+
+  return normalizeMemoryChangeSetResult(await res.json())
+}
+
+export async function freezeMemoryChangeSet(
+  storyId: string,
+  chapterId: string,
+  changeSetId: string,
+): Promise<MemoryFreezeResult> {
+  const res = await fetch(
+    `${API_BASE}/api/stories/${storyId}/chapters/${chapterId}/memory-change-sets/${changeSetId}/freeze`,
+    {
+      method: 'POST',
+    },
+  )
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, 'Failed to freeze chapter'))
+  }
+
+  return normalizeMemoryFreezeResult(await res.json())
+}
+
 export function generateChapterStream(
   req: GenerateRequest,
   callbacks: {
@@ -426,4 +541,40 @@ export function generateChapterStream(
       eventSource?.close()
     },
   }
+}
+
+function normalizeMemoryChangeSetResult(data: unknown): MemoryChangeSetResult {
+  if (isRecord(data)) {
+    const memoryChangeSet = data.memoryChangeSet || data.memory_change_set
+    if (isRecord(memoryChangeSet)) {
+      return {
+        chapter: isChapterLike(data.chapter) ? data.chapter : undefined,
+        memoryChangeSet: memoryChangeSet as unknown as MemoryChangeSet,
+        memory_change_set: memoryChangeSet as unknown as MemoryChangeSet,
+      }
+    }
+  }
+
+  return {
+    memoryChangeSet: data as MemoryChangeSet,
+  }
+}
+
+function normalizeMemoryFreezeResult(data: unknown): MemoryFreezeResult {
+  if (isRecord(data)) {
+    const memoryChangeSet = data.memoryChangeSet || data.memory_change_set
+    if (isChapterLike(data.chapter) && isRecord(memoryChangeSet)) {
+      return {
+        chapter: data.chapter,
+        memoryChangeSet: memoryChangeSet as unknown as MemoryChangeSet,
+        memory_change_set: memoryChangeSet as unknown as MemoryChangeSet,
+      }
+    }
+  }
+
+  return data as MemoryFreezeResult
+}
+
+function isChapterLike(value: unknown): value is Chapter {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.status === 'string'
 }

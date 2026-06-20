@@ -3,6 +3,7 @@ import { CreationConsole } from './components/CreationConsole'
 import { LivePreview } from './components/LivePreview'
 import { AgentStatus } from './components/AgentStatus'
 import { GenerationHistory } from './components/GenerationHistory'
+import { MemoryChangeSetPanel } from './components/MemoryChangeSetPanel'
 import { NovelIdeaChat } from './components/NovelIdeaChat'
 import { OutlineOptionsPanel } from './components/OutlineOptionsPanel'
 import { useSSE } from './hooks/useSSE'
@@ -120,6 +121,13 @@ function App() {
             chapter={selectedChapter ?? undefined}
             refreshKey={chapterRefreshKey}
             onChapterConfirmed={handleChapterUpdated}
+          />
+          <MemoryChangeSetPanel
+            storyId={selectedStory?.id}
+            chapterId={selectedChapter?.id}
+            chapter={selectedChapter}
+            refreshKey={chapterRefreshKey}
+            onChapterUpdated={handleChapterUpdated}
           />
           <LivePreview
             draft={previewText}

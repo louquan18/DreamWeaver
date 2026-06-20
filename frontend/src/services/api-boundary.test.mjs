@@ -14,6 +14,10 @@ const outlineOptionsSource = await readFile(
   resolve(currentDir, '../components/OutlineOptionsPanel.tsx'),
   'utf8',
 )
+const memoryChangeSetPanelSource = await readFile(
+  resolve(currentDir, '../components/MemoryChangeSetPanel.tsx'),
+  'utf8',
+).catch(() => '')
 const generationHistorySource = await readFile(
   resolve(currentDir, '../components/GenerationHistory.tsx'),
   'utf8',
@@ -21,6 +25,7 @@ const generationHistorySource = await readFile(
 const sseHookSource = await readFile(resolve(currentDir, '../hooks/useSSE.ts'), 'utf8')
 const blueprintSources = `${apiSource}\n${ideaChatSource}`
 const outlineSources = `${apiSource}\n${outlineOptionsSource}`
+const memorySources = `${apiSource}\n${memoryChangeSetPanelSource}`
 const generationSources = `${apiSource}\n${generationHistorySource}\n${sseHookSource}`
 
 test('blueprint API calls stay behind the Java service boundary', () => {
@@ -81,4 +86,41 @@ test('draft UI components use the frontend API client for generation records', (
   assert.doesNotMatch(generationHistorySource, /\bfetch\s*\(/)
   assert.doesNotMatch(generationHistorySource, /\bEventSource\s*\(/)
   assert.doesNotMatch(sseHookSource, /\bEventSource\s*\(/)
+})
+
+test('memory change set API calls stay behind the Java service boundary', () => {
+  assert.match(apiSource, /export async function extractMemoryChangeSet/)
+  assert.match(apiSource, /export async function listMemoryChangeSets/)
+  assert.match(apiSource, /export async function getMemoryChangeSet/)
+  assert.match(apiSource, /export async function updateMemoryChangeSet/)
+  assert.match(apiSource, /export async function confirmMemoryChangeSet/)
+  assert.match(apiSource, /export async function freezeMemoryChangeSet/)
+
+  assert.match(apiSource, /\/api\/stories\/\$\{storyId\}\/chapters\/\$\{chapterId\}\/memory-change-sets\/extract/)
+  assert.match(apiSource, /\/api\/stories\/\$\{storyId\}\/chapters\/\$\{chapterId\}\/memory-change-sets/)
+  assert.match(apiSource, /\/api\/stories\/\$\{storyId\}\/chapters\/\$\{chapterId\}\/memory-change-sets\/\$\{changeSetId\}/)
+  assert.match(apiSource, /\/api\/stories\/\$\{storyId\}\/chapters\/\$\{chapterId\}\/memory-change-sets\/\$\{changeSetId\}\/confirm/)
+  assert.match(apiSource, /\/api\/stories\/\$\{storyId\}\/chapters\/\$\{chapterId\}\/memory-change-sets\/\$\{changeSetId\}\/freeze/)
+
+  assert.doesNotMatch(memorySources, /\/internal\/ai/)
+  assert.doesNotMatch(memorySources, /localhost:8000/)
+  assert.doesNotMatch(memorySources, /PYTHON_AI_BASE_URL/)
+  assert.doesNotMatch(memorySources, /python-ai/i)
+})
+
+test('memory change set panel uses the frontend API client', () => {
+  assert.match(memoryChangeSetPanelSource, /extractMemoryChangeSet/)
+  assert.match(memoryChangeSetPanelSource, /listMemoryChangeSets/)
+  assert.match(memoryChangeSetPanelSource, /updateMemoryChangeSet/)
+  assert.match(memoryChangeSetPanelSource, /confirmMemoryChangeSet/)
+  assert.match(memoryChangeSetPanelSource, /freezeMemoryChangeSet/)
+  assert.doesNotMatch(memoryChangeSetPanelSource, /\bfetch\s*\(/)
+  assert.doesNotMatch(memoryChangeSetPanelSource, /\bEventSource\s*\(/)
+})
+
+test('memory change set panel advances chapter stage when Java returns only a change set', () => {
+  assert.match(memoryChangeSetPanelSource, /onChapterUpdated\?\.\(\{\s*\.\.\.chapter,\s*workflowStage:\s*'memory_pending_confirmation'\s*\}\)/s)
+  assert.match(memoryChangeSetPanelSource, /onChapterUpdated\?\.\(\{\s*\.\.\.chapter,\s*workflowStage:\s*'memory_confirmed'\s*\}\)/s)
+  assert.match(memoryChangeSetPanelSource, /MEMORY_READY_STAGES\s*=\s*\['memory_confirmed'\]/)
+  assert.match(memoryChangeSetPanelSource, /'chapter_confirmed'/)
 })
