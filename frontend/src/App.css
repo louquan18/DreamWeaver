@@ -28,45 +28,175 @@
 
 .app-main {
   flex: 1;
-  display: flex;
-  gap: 20px;
-  padding: 20px 32px;
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(520px, 1fr) minmax(320px, 380px);
+  grid-template-areas: "sidebar editor rail";
+  gap: 18px;
+  padding: 18px 24px 24px;
   overflow: hidden;
   min-height: 0;
 }
 
-.left-panel {
-  width: 380px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.workspace-sidebar,
+.workspace-editor,
+.workspace-rail {
   min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
+  min-width: 0;
 }
 
-.right-panel {
-  flex: 1;
-  min-height: 0;
+.workspace-sidebar,
+.workspace-rail {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   overflow-y: auto;
   padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.workspace-sidebar {
+  grid-area: sidebar;
+}
+
+.workspace-editor {
+  grid-area: editor;
+  display: flex;
+}
+
+.workspace-rail {
+  grid-area: rail;
+}
+
+.workspace-editor .live-preview {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace-editor .preview-layout {
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace-editor .preview-content {
+  min-height: 0;
+}
+
+.workspace-editor .draft-inspector {
+  min-height: 0;
+  overflow: auto;
+}
+
+.workspace-rail .outline-grid {
+  grid-template-columns: 1fr;
+}
+
+.workspace-rail .outline-panel-header,
+.workspace-rail .memory-panel-header {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.workspace-rail .outline-header-actions,
+.workspace-rail .memory-header-actions,
+.workspace-rail .memory-editor-actions,
+.workspace-rail .memory-final-actions div {
+  width: 100%;
+}
+
+.workspace-rail .outline-header-actions button,
+.workspace-rail .memory-header-actions button,
+.workspace-rail .memory-editor-actions button,
+.workspace-rail .memory-final-actions button {
+  flex: 1;
+}
+
+.workspace-rail .memory-toolbar,
+.workspace-rail .memory-stage-strip {
+  grid-template-columns: 1fr;
+}
+
+.workspace-rail .memory-status-metrics,
+.workspace-rail .memory-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.workspace-rail .memory-editor-heading,
+.workspace-rail .memory-final-actions {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+@media (max-width: 1320px) {
+  .app-main {
+    grid-template-columns: minmax(280px, 330px) minmax(460px, 1fr) minmax(300px, 340px);
+    gap: 14px;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .app-main {
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+    grid-template-areas:
+      "sidebar editor"
+      "rail rail";
+    overflow-y: auto;
+  }
+
+  .workspace-sidebar,
+  .workspace-editor,
+  .workspace-rail {
+    overflow: visible;
+  }
+
+  .workspace-editor .live-preview {
+    min-height: 640px;
+  }
+
+  .workspace-rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-right: 0;
+  }
 }
 
 @media (max-width: 900px) {
   .app-main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "sidebar"
+      "editor"
+      "rail";
+  }
+
+  .workspace-rail {
+    display: flex;
+  }
+
+  .workspace-editor .live-preview {
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-header {
+    align-items: flex-start;
     flex-direction: column;
-    padding: 16px;
+    gap: 6px;
+    padding: 14px 16px;
   }
 
-  .left-panel {
-    width: 100%;
+  .app-main {
+    padding: 12px;
   }
 
-  .right-panel {
-    min-height: 400px;
+  .workspace-editor .live-preview {
+    min-height: 520px;
+  }
+
+  .workspace-rail .memory-status-metrics,
+  .workspace-rail .memory-tabs {
+    grid-template-columns: 1fr;
   }
 }

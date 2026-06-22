@@ -13,6 +13,8 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -283,6 +285,37 @@ class ChapterGenerationServiceTests {
         assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_CONFIRMED);
     }
 
+    @ParameterizedTest
+    @EnumSource(
+        value = ChapterWorkflowStage.class,
+        names = {
+            "MEMORY_EXTRACTING",
+            "MEMORY_PENDING_CONFIRMATION",
+            "MEMORY_CONFIRMED",
+            "CHAPTER_CONFIRMED"
+        }
+    )
+    void markRunningDoesNotRegressMemoryOrFrozenWorkflowStages(ChapterWorkflowStage lockedStage) {
+        Chapter chapter = chapter(lockedStage);
+        chapter.setLastGenerationId(GENERATION_ID);
+        chapter.setStatus(ChapterStatus.APPROVED);
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.QUEUED, null);
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(generationRepository.save(any(ChapterGeneration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.markRunning(STORY_ID, CHAPTER_ID, GENERATION_ID);
+
+        assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.APPROVED);
+        assertThat(chapter.getWorkflowStage()).isEqualTo(lockedStage);
+        verify(chapterRepository, never()).save(any(Chapter.class));
+    }
+
     @Test
     void completeFromStreamMovesChapterToDraftReadyForConfirmation() {
         Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_GENERATING);
@@ -339,6 +372,47 @@ class ChapterGenerationServiceTests {
         assertThat(chapter.getContent()).isEqualTo("Confirmed draft.");
         assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.APPROVED);
         assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_CONFIRMED);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+        value = ChapterWorkflowStage.class,
+        names = {
+            "MEMORY_EXTRACTING",
+            "MEMORY_PENDING_CONFIRMATION",
+            "MEMORY_CONFIRMED",
+            "CHAPTER_CONFIRMED"
+        }
+    )
+    void completeFromStreamDoesNotRegressMemoryOrFrozenWorkflowStages(ChapterWorkflowStage lockedStage) {
+        Chapter chapter = chapter(lockedStage);
+        chapter.setLastGenerationId(GENERATION_ID);
+        chapter.setStatus(ChapterStatus.APPROVED);
+        chapter.setContent("Confirmed draft.");
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.RUNNING, null);
+        generation.setRequest(Map.of("auto_adopt", true));
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(generationRepository.save(any(ChapterGeneration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.completeFromStream(
+            STORY_ID,
+            CHAPTER_ID,
+            GENERATION_ID,
+            "Late stream result.",
+            1800,
+            java.util.List.of()
+        );
+
+        assertThat(chapter.getContent()).isEqualTo("Confirmed draft.");
+        assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.APPROVED);
+        assertThat(chapter.getWorkflowStage()).isEqualTo(lockedStage);
+        verify(chapterRepository, never()).save(any(Chapter.class));
     }
 
     private ChapterGenerationService service() {

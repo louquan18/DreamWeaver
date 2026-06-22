@@ -29,6 +29,7 @@ export interface Chapter {
   wordCount?: number
   word_count?: number
   lastGenerationId?: string
+  last_generation_id?: string
   status: string
   workflowStage?: string
   workflow_stage?: string
@@ -284,7 +285,7 @@ export interface ChapterOutlineOptionsGenerateResult {
   options: ChapterOutlineOption[]
 }
 
-export type MemoryChangeType = 'timeline' | 'character' | 'world' | 'foreshadow'
+export type MemoryChangeType = 'timeline' | 'character' | 'world' | 'foreshadow' | 'conflicts'
 
 export type MemoryChange = Record<string, unknown>
 
@@ -303,6 +304,7 @@ export interface MemoryChangeSet {
   world_changes?: MemoryChange[]
   foreshadowChanges?: MemoryChange[]
   foreshadow_changes?: MemoryChange[]
+  conflicts?: MemoryChange[]
   changes?: Partial<Record<MemoryChangeType, MemoryChange[]>>
   summary?: string
   errorMessage?: string
@@ -328,6 +330,7 @@ export interface MemoryChangeSetUpdateRequest {
   world_changes?: MemoryChange[]
   foreshadowChanges?: MemoryChange[]
   foreshadow_changes?: MemoryChange[]
+  conflicts?: MemoryChange[]
 }
 
 export interface MemoryChangeSetResult {

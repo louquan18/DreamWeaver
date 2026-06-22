@@ -55,6 +55,16 @@ export function CreationConsole({
   )
   const draftConfirmed = isDraftConfirmedStage(selectedWorkflowStage)
   const generationUnlocked = isDraftGenerationUnlocked(selectedWorkflowStage)
+  const lastChapter = useMemo(() => getLastChapter(chapters), [chapters])
+  const nextChapterNumber = useMemo(() => getNextChapterNumber(chapters), [chapters])
+  const canContinueToNextChapter =
+    chapters.length === 0 || (lastChapter ? isChapterContinuationUnlocked(lastChapter) : false)
+  const nextChapterDisabled = isRunning || loading || !selectedStoryId || !canContinueToNextChapter
+  const nextChapterDisabledReason = !selectedStoryId
+    ? 'Select a novel first'
+    : !canContinueToNextChapter
+      ? 'Last chapter must be approved before continuing'
+      : undefined
 
   const refreshStories = useCallback(async () => {
     try {
@@ -80,8 +90,7 @@ export function CreationConsole({
         if (data.some((chapter) => chapter.id === current)) return current
         return data[0]?.id || ''
       })
-      const nextNumber = Math.max(0, ...data.map((chapter) => getChapterNumber(chapter))) + 1
-      setChapterNumber(nextNumber)
+      setChapterNumber(getNextChapterNumber(data))
     } catch (error) {
       setPanelError(error instanceof Error ? error.message : 'Failed to load chapters')
       setChapters([])
@@ -143,7 +152,28 @@ export function CreationConsole({
       setChapters((prev) => [...prev, chapter].sort(compareChapters))
       setSelectedChapterId(chapter.id)
       setChapterTitle('')
-      setChapterNumber((prev) => prev + 1)
+      setChapterNumber(getChapterNumber(chapter) + 1)
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : 'Failed to create chapter')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleCreateNextChapter() {
+    if (nextChapterDisabled) return
+
+    setLoading(true)
+    setPanelError('')
+    try {
+      const chapter = await createChapter(selectedStoryId, {
+        chapterNumber: nextChapterNumber,
+        title: chapterTitle.trim() || undefined,
+      })
+      setChapters((prev) => [...prev, chapter].sort(compareChapters))
+      setSelectedChapterId(chapter.id)
+      setChapterTitle('')
+      setChapterNumber(getChapterNumber(chapter) + 1)
     } catch (error) {
       setPanelError(error instanceof Error ? error.message : 'Failed to create chapter')
     } finally {
@@ -227,6 +257,15 @@ export function CreationConsole({
 
       <form className="console-section" onSubmit={handleCreateChapter}>
         <div className="section-title">Chapter</div>
+        <button
+          type="button"
+          className="btn-primary btn-next-chapter"
+          onClick={handleCreateNextChapter}
+          disabled={nextChapterDisabled}
+          title={nextChapterDisabledReason}
+        >
+          Next chapter #{nextChapterNumber}
+        </button>
         <div className="split-row">
           <label>
             <span>No.</span>
@@ -249,7 +288,11 @@ export function CreationConsole({
             />
           </label>
         </div>
-        <button type="submit" disabled={isRunning || loading || !selectedStoryId}>
+        <button
+          type="submit"
+          className="btn-secondary"
+          disabled={isRunning || loading || !selectedStoryId}
+        >
           Create chapter
         </button>
 
@@ -333,6 +376,17 @@ function getChapterNumber(chapter: Chapter) {
   return chapter.chapterNumber ?? chapter.chapter_number ?? 0
 }
 
+function getNextChapterNumber(chapters: Chapter[]) {
+  return Math.max(0, ...chapters.map((chapter) => getChapterNumber(chapter))) + 1
+}
+
+function getLastChapter(chapters: Chapter[]) {
+  return chapters.reduce<Chapter | null>((latest, chapter) => {
+    if (!latest) return chapter
+    return getChapterNumber(chapter) > getChapterNumber(latest) ? chapter : latest
+  }, null)
+}
+
 function getWordCount(chapter: Chapter) {
   return chapter.wordCount ?? chapter.word_count ?? 0
 }
@@ -360,6 +414,12 @@ function isDraftConfirmedStage(stage: string) {
     'memory_confirmed',
     'chapter_confirmed',
   ].includes(stage)
+}
+
+function isChapterContinuationUnlocked(chapter: Chapter) {
+  const workflowStage = normalizeStage(chapter.workflowStage ?? chapter.workflow_stage)
+  const status = normalizeStage(chapter.status)
+  return workflowStage === 'chapter_confirmed' || workflowStage === 'approved' || status === 'approved'
 }
 
 function formatWorkflowStage(value?: string) {

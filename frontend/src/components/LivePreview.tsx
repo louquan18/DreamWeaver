@@ -2,6 +2,8 @@ import type { Chapter, ChapterGeneration } from '../types'
 import './LivePreview.css'
 
 type Severity = 'P0' | 'P1' | 'P2' | 'INFO'
+type ConfirmationState = 'generating' | 'confirmed' | 'blocked' | 'ready' | 'waiting'
+type ReadinessTone = 'muted' | 'active' | 'success' | 'danger'
 
 interface DisplayIssue {
   id: string
@@ -12,6 +14,22 @@ interface DisplayIssue {
   evidence?: string
   suggestion?: string
   blocking: boolean
+}
+
+interface IssueSummary {
+  total: number
+  blocking: number
+  advisory: number
+  bySource: Record<string, number>
+  bySeverity: Record<Severity, number>
+}
+
+interface ConfirmationReadiness {
+  state: ConfirmationState
+  tone: ReadinessTone
+  label: string
+  detail: string
+  buttonLabel: string
 }
 
 interface LivePreviewProps {
@@ -41,25 +59,35 @@ export function LivePreview({
 }: LivePreviewProps) {
   const wordCount = draft.length
   const activeGenerationId = generation?.id || generationId
+  const hasDraft = Boolean(draft.trim())
+  const generationStatus = generation?.status?.toLowerCase()
+  const generationLabel = generation?.status || status
+  const hasSuccessfulGeneration = generationStatus === 'succeeded' || status === 'done'
   const workflowStage = normalizeStage(chapter?.workflowStage ?? chapter?.workflow_stage)
+  const lastGenerationId = chapter?.lastGenerationId ?? chapter?.last_generation_id
   const confirmed = Boolean(
     activeGenerationId
-      && chapter?.lastGenerationId === activeGenerationId
+      && (lastGenerationId === activeGenerationId || generation?.adopted)
       && isDraftConfirmedStage(workflowStage),
   )
-  const canConfirm = Boolean(
-    activeGenerationId
-      && draft.trim()
-      && !isGenerating
-      && !confirmed
-      && (generation?.status?.toLowerCase() === 'succeeded' || status === 'done'),
-  )
-
   const reviewIssues = getIssues(generation?.reviewReport, 'Review')
   const consistencyIssues = getIssues(generation?.consistencyReport, 'Consistency')
   const issues = [...reviewIssues, ...consistencyIssues]
+  const issueSummary = getIssueSummary(issues)
+  const blockingIssues = issues.filter((issue) => issue.blocking)
+  const advisoryIssues = issues.filter((issue) => !issue.blocking)
+  const readiness = getConfirmationReadiness({
+    activeGenerationId,
+    blockingCount: issueSummary.blocking,
+    confirmed,
+    generationLabel,
+    hasDraft,
+    hasSuccessfulGeneration,
+    isGenerating,
+  })
   const repair = getRepairInfo(generation)
   const history = getHistoryItems(generation?.executionHistory, runtimeHistory)
+  const canConfirm = readiness.state === 'ready' && !confirming
 
   return (
     <div className="live-preview">
@@ -75,17 +103,41 @@ export function LivePreview({
           {onConfirmDraft && activeGenerationId && (
             <button
               type="button"
-              className="confirm-draft-button"
-              onClick={() => activeGenerationId && onConfirmDraft(activeGenerationId)}
-              disabled={!canConfirm || confirming}
+              className={`confirm-draft-button confirm-state-${readiness.state}`}
+              onClick={() => canConfirm && onConfirmDraft(activeGenerationId)}
+              disabled={!canConfirm}
+              aria-describedby="draft-confirmation-status"
             >
-              {confirming ? 'Confirming' : confirmed ? 'Confirmed' : 'Confirm draft'}
+              {confirming ? 'Confirming' : readiness.buttonLabel}
             </button>
           )}
         </div>
       </div>
 
       {status === 'error' && errorMessage && <div className="preview-error">{errorMessage}</div>}
+
+      <section
+        id="draft-confirmation-status"
+        className={`draft-readiness readiness-${readiness.tone}`}
+        aria-live="polite"
+      >
+        <div>
+          <span className="readiness-kicker">Confirmation status</span>
+          <strong>{readiness.label}</strong>
+          <p>{readiness.detail}</p>
+        </div>
+        <div className="readiness-checks" aria-label="Draft confirmation checks">
+          <span className={hasSuccessfulGeneration ? 'check-ok' : 'check-wait'}>
+            Generation: {hasSuccessfulGeneration ? 'successful' : generationLabel}
+          </span>
+          <span className={hasDraft ? 'check-ok' : 'check-wait'}>
+            Draft: {hasDraft ? 'available' : 'empty'}
+          </span>
+          <span className={issueSummary.blocking ? 'check-blocked' : 'check-ok'}>
+            Blocking issues: {issueSummary.blocking}
+          </span>
+        </div>
+      </section>
 
       <div className="preview-layout">
         <section className="preview-content" aria-label="Generated draft">
@@ -108,22 +160,36 @@ export function LivePreview({
           <section className="inspector-section">
             <div className="inspector-heading">
               <h4>Issues</h4>
-              <span>{issueCountLabel(issues)}</span>
+              <span>{issueCountLabel(issueSummary)}</span>
             </div>
+            {issues.length > 0 && (
+              <div className="issue-summary" aria-label="Issue summary">
+                <span>
+                  <strong>{issueSummary.blocking}</strong>
+                  Blocking
+                </span>
+                <span>
+                  <strong>{issueSummary.advisory}</strong>
+                  Non-blocking
+                </span>
+                <span>
+                  <strong>{issueSummary.bySource.Review || 0}</strong>
+                  Review
+                </span>
+                <span>
+                  <strong>{issueSummary.bySource.Consistency || 0}</strong>
+                  Consistency
+                </span>
+              </div>
+            )}
             {issues.length > 0 ? (
               <div className="issue-list">
-                {issues.map((issue) => (
-                  <article key={issue.id} className={`issue-card severity-${issue.severity.toLowerCase()}`}>
-                    <div className="issue-title">
-                      <span>{issue.severity}</span>
-                      <strong>{issue.source}</strong>
-                      {issue.category && <em>{issue.category}</em>}
-                    </div>
-                    <p>{issue.message}</p>
-                    {issue.evidence && <blockquote>{issue.evidence}</blockquote>}
-                    {issue.suggestion && <small>{issue.suggestion}</small>}
-                  </article>
-                ))}
+                {blockingIssues.length > 0 && (
+                  <IssueGroup title="Blocking" issues={blockingIssues} />
+                )}
+                {advisoryIssues.length > 0 && (
+                  <IssueGroup title="Non-blocking" issues={advisoryIssues} />
+                )}
               </div>
             ) : (
               <p className="inspector-empty">
@@ -177,20 +243,50 @@ export function LivePreview({
   )
 }
 
+function IssueGroup({ title, issues }: { title: string, issues: DisplayIssue[] }) {
+  return (
+    <div className="issue-group">
+      <div className="issue-group-title">
+        <span>{title}</span>
+        <em>{issues.length}</em>
+      </div>
+      {issues.map((issue) => (
+        <article
+          key={issue.id}
+          className={`issue-card severity-${issue.severity.toLowerCase()} ${issue.blocking ? 'is-blocking' : 'is-advisory'}`}
+        >
+          <div className="issue-title">
+            <span className="severity-badge">{issue.severity}</span>
+            <span className={`source-badge source-${issue.source.toLowerCase()}`}>{issue.source}</span>
+            <strong>{issue.blocking ? 'Blocking' : 'Non-blocking'}</strong>
+            {issue.category && <em>{issue.category}</em>}
+          </div>
+          <p>{issue.message}</p>
+          {issue.evidence && <blockquote>{issue.evidence}</blockquote>}
+          {issue.suggestion && <small>{issue.suggestion}</small>}
+        </article>
+      ))}
+    </div>
+  )
+}
+
 function getIssues(report: Record<string, unknown> | undefined, source: string): DisplayIssue[] {
   const rawIssues = Array.isArray(report?.issues) ? report.issues : []
   return rawIssues
     .filter(isRecord)
-    .map((item, index) => ({
-      id: getString(item.id) || getString(item.issueId) || `${source}-${index}`,
-      source,
-      severity: getSeverity(item.severity),
-      category: getString(item.category) || getString(item.domain) || '',
-      message: getString(item.message) || 'Issue returned without a message.',
-      evidence: getString(item.evidence) || getLocationQuote(item.location),
-      suggestion: getString(item.suggestion),
-      blocking: Boolean(item.blocking),
-    }))
+    .map((item, index) => {
+      const severity = getSeverity(item.severity)
+      return {
+        id: getString(item.id) || getString(item.issueId) || `${source}-${index}`,
+        source,
+        severity,
+        category: getString(item.category) || getString(item.domain) || '',
+        message: getString(item.message) || 'Issue returned without a message.',
+        evidence: getString(item.evidence) || getLocationQuote(item.location),
+        suggestion: getString(item.suggestion),
+        blocking: Boolean(item.blocking) || severity === 'P0',
+      }
+    })
 }
 
 function getRepairInfo(generation?: ChapterGeneration | null) {
@@ -223,16 +319,124 @@ function getHistoryItems(
   return runtimeHistory
 }
 
-function issueCountLabel(issues: DisplayIssue[]) {
-  if (!issues.length) return 'clear'
-  const counts = issues.reduce<Record<Severity, number>>(
+function getIssueSummary(issues: DisplayIssue[]): IssueSummary {
+  return issues.reduce<IssueSummary>(
     (acc, issue) => {
-      acc[issue.severity] += 1
+      acc.total += 1
+      acc.bySeverity[issue.severity] += 1
+      acc.bySource[issue.source] = (acc.bySource[issue.source] || 0) + 1
+      if (issue.blocking) {
+        acc.blocking += 1
+      } else {
+        acc.advisory += 1
+      }
       return acc
     },
-    { P0: 0, P1: 0, P2: 0, INFO: 0 },
+    {
+      total: 0,
+      blocking: 0,
+      advisory: 0,
+      bySource: {},
+      bySeverity: { P0: 0, P1: 0, P2: 0, INFO: 0 },
+    },
   )
-  return [`P0 ${counts.P0}`, `P1 ${counts.P1}`, `P2 ${counts.P2}`].join(' / ')
+}
+
+function issueCountLabel(summary: IssueSummary) {
+  if (!summary.total) return 'clear'
+  const severity = [
+    `P0 ${summary.bySeverity.P0}`,
+    `P1 ${summary.bySeverity.P1}`,
+    `P2 ${summary.bySeverity.P2}`,
+    `Info ${summary.bySeverity.INFO}`,
+  ].join(' / ')
+  return `${summary.blocking} blocking / ${severity}`
+}
+
+function getConfirmationReadiness({
+  activeGenerationId,
+  blockingCount,
+  confirmed,
+  generationLabel,
+  hasDraft,
+  hasSuccessfulGeneration,
+  isGenerating,
+}: {
+  activeGenerationId: string
+  blockingCount: number
+  confirmed: boolean
+  generationLabel: string
+  hasDraft: boolean
+  hasSuccessfulGeneration: boolean
+  isGenerating: boolean
+}): ConfirmationReadiness {
+  if (isGenerating) {
+    return {
+      state: 'generating',
+      tone: 'active',
+      label: 'Generation in progress',
+      detail: 'Draft text is still streaming. Confirmation unlocks after the generation completes successfully.',
+      buttonLabel: 'Generating',
+    }
+  }
+
+  if (confirmed) {
+    return {
+      state: 'confirmed',
+      tone: 'success',
+      label: 'Draft already confirmed',
+      detail: 'This generation has been adopted for the current chapter.',
+      buttonLabel: 'Confirmed',
+    }
+  }
+
+  if (!activeGenerationId) {
+    return {
+      state: 'waiting',
+      tone: 'muted',
+      label: 'No generation selected',
+      detail: 'Select or complete a generation before confirming a draft.',
+      buttonLabel: 'Confirm draft',
+    }
+  }
+
+  if (!hasDraft) {
+    return {
+      state: 'waiting',
+      tone: 'muted',
+      label: 'Draft is empty',
+      detail: 'Confirmation requires generated draft text.',
+      buttonLabel: 'Confirm draft',
+    }
+  }
+
+  if (!hasSuccessfulGeneration) {
+    return {
+      state: 'waiting',
+      tone: 'muted',
+      label: 'Waiting for a successful generation',
+      detail: `Current generation status is ${generationLabel}. Confirm is available only after success.`,
+      buttonLabel: 'Confirm draft',
+    }
+  }
+
+  if (blockingCount > 0) {
+    return {
+      state: 'blocked',
+      tone: 'danger',
+      label: 'Confirmation blocked',
+      detail: `${blockingCount} blocking issue${blockingCount === 1 ? '' : 's'} must be repaired or accepted before this draft can be confirmed.`,
+      buttonLabel: 'Blocked',
+    }
+  }
+
+  return {
+    state: 'ready',
+    tone: 'success',
+    label: 'Ready to confirm',
+    detail: 'Successful generation with draft text and no blocking issues.',
+    buttonLabel: 'Confirm draft',
+  }
 }
 
 function getSeverity(value: unknown): Severity {

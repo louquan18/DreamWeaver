@@ -78,6 +78,15 @@ def test_parse_memory_extraction_response_accepts_fenced_json_object():
     assert result.summary == "One timeline memory was extracted."
 
 
+@pytest.mark.parametrize("raw_response", ["", "   ", "```json\n\n```"])
+def test_parse_memory_extraction_response_rejects_empty_llm_response(raw_response: str):
+    with pytest.raises(MemoryExtractionGenerationError) as exc_info:
+        parse_memory_extraction_response(raw_response)
+
+    assert exc_info.value.code == "EMPTY_MEMORY_EXTRACTION_RESPONSE"
+    assert "empty" in exc_info.value.message
+
+
 @pytest.mark.parametrize(
     ("raw_response", "expected_code"),
     [
@@ -148,6 +157,23 @@ async def test_extract_memory_from_confirmed_draft_returns_valid_result_from_llm
     prompt = "\n".join(message["content"] for message in captured["messages"])
     assert "Lin Jin confirmed the mirror name in the market." in prompt
     assert "writer-default" in prompt
+
+
+@pytest.mark.asyncio
+async def test_extract_memory_from_confirmed_draft_rejects_empty_llm_stream(monkeypatch):
+    async def fake_llm_stream_with_fallback(messages, models, max_tokens, temperature):
+        if False:
+            yield ""
+
+    monkeypatch.setattr(
+        "src.services.memory_extraction_service.llm_stream_with_fallback",
+        fake_llm_stream_with_fallback,
+    )
+
+    with pytest.raises(MemoryExtractionGenerationError) as exc_info:
+        await extract_memory_from_confirmed_draft(memory_extraction_request_payload())
+
+    assert exc_info.value.code == "EMPTY_MEMORY_EXTRACTION_RESPONSE"
 
 
 @pytest.mark.asyncio

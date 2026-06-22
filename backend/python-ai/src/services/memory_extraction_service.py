@@ -140,6 +140,11 @@ async def extract_memory_from_confirmed_draft(
 def parse_memory_extraction_response(raw_response: str) -> MemoryExtractionResult:
     """Parse and validate the Memory Extraction Agent JSON-only response."""
     content = _strip_json_fence(raw_response)
+    if not content:
+        raise MemoryExtractionGenerationError(
+            "EMPTY_MEMORY_EXTRACTION_RESPONSE",
+            "Memory extraction agent returned an empty response",
+        )
     try:
         data = json.loads(content)
     except json.JSONDecodeError as exc:

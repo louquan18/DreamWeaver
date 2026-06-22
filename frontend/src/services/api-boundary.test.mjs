@@ -22,6 +22,10 @@ const generationHistorySource = await readFile(
   resolve(currentDir, '../components/GenerationHistory.tsx'),
   'utf8',
 )
+const creationConsoleSource = await readFile(
+  resolve(currentDir, '../components/CreationConsole.tsx'),
+  'utf8',
+)
 const sseHookSource = await readFile(resolve(currentDir, '../hooks/useSSE.ts'), 'utf8')
 const blueprintSources = `${apiSource}\n${ideaChatSource}`
 const outlineSources = `${apiSource}\n${outlineOptionsSource}`
@@ -88,6 +92,13 @@ test('draft UI components use the frontend API client for generation records', (
   assert.doesNotMatch(sseHookSource, /\bEventSource\s*\(/)
 })
 
+test('creation console exposes a sequential next chapter entry point', () => {
+  assert.match(creationConsoleSource, /Next chapter/)
+  assert.match(creationConsoleSource, /chapter_confirmed/)
+  assert.match(creationConsoleSource, /approved/)
+  assert.match(creationConsoleSource, /getNextChapterNumber/)
+})
+
 test('memory change set API calls stay behind the Java service boundary', () => {
   assert.match(apiSource, /export async function extractMemoryChangeSet/)
   assert.match(apiSource, /export async function listMemoryChangeSets/)
@@ -114,6 +125,8 @@ test('memory change set panel uses the frontend API client', () => {
   assert.match(memoryChangeSetPanelSource, /updateMemoryChangeSet/)
   assert.match(memoryChangeSetPanelSource, /confirmMemoryChangeSet/)
   assert.match(memoryChangeSetPanelSource, /freezeMemoryChangeSet/)
+  assert.match(memoryChangeSetPanelSource, /key:\s*'conflicts'/)
+  assert.match(memoryChangeSetPanelSource, /conflicts:\s*parsed\.conflicts/)
   assert.doesNotMatch(memoryChangeSetPanelSource, /\bfetch\s*\(/)
   assert.doesNotMatch(memoryChangeSetPanelSource, /\bEventSource\s*\(/)
 })

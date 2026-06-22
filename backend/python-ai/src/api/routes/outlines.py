@@ -39,6 +39,17 @@ async def generate_chapter_outline_options(
     request: OutlineOptionsGenerateRequest,
 ) -> ChapterOutlineOptionsDraft:
     """Generate A/B/C chapter outline options for a story chapter."""
+    if not str(request.option_group_id or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "OPTION_GROUP_ID_REQUIRED",
+                "message": "optionGroupId is required for outline options generation",
+                "storyId": story_id,
+                "chapterId": chapter_id,
+            },
+        )
+
     try:
         return await generate_outline_options(
             story_id=story_id,

@@ -56,6 +56,7 @@ public class ChapterOutlineService {
     ) {
         getStory(storyId);
         Chapter chapter = getChapter(storyId, chapterId);
+        assertOutlineCanBeConfirmed(chapter);
 
         if (outlineRepository.existsByStoryIdAndChapterIdAndStatus(
             storyId,
@@ -108,6 +109,15 @@ public class ChapterOutlineService {
     private Chapter getChapter(UUID storyId, UUID chapterId) {
         return chapterRepository.findByIdAndStoryId(chapterId, storyId)
             .orElseThrow(() -> new ResourceNotFoundException("Chapter not found: " + chapterId));
+    }
+
+    private void assertOutlineCanBeConfirmed(Chapter chapter) {
+        if (chapter.getWorkflowStage() != ChapterWorkflowStage.OUTLINE_OPTIONS_GENERATED) {
+            throw new ConflictException(
+                "outline_confirmation_stage_locked",
+                "Chapter outline cannot be confirmed at workflow stage: " + chapter.getWorkflowStage().value()
+            );
+        }
     }
 
     private List<UUID> normalizeSourceOptionIds(ChapterOutlineConfirmRequest request) {

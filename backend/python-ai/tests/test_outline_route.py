@@ -56,7 +56,7 @@ async def test_internal_outline_options_generate_route_maps_generation_error(mon
 
     response = await client.post(
         "/internal/ai/stories/story-1/chapters/chapter-1/outline-options/generate",
-        json={},
+        json={"optionGroupId": "group-1"},
     )
 
     assert response.status_code == 400
@@ -64,6 +64,34 @@ async def test_internal_outline_options_generate_route_maps_generation_error(mon
     assert detail["code"] == "OUTLINE_GENERATION_ERROR"
     assert detail["storyId"] == "story-1"
     assert "A, B, and C" in detail["message"]
+
+
+@pytest.mark.asyncio
+async def test_internal_outline_options_generate_route_rejects_missing_option_group_id(
+    monkeypatch,
+    client,
+):
+    async def fake_generate_outline_options(**kwargs):
+        pytest.fail("outline generator should not run without optionGroupId")
+
+    monkeypatch.setattr(
+        "src.api.routes.outlines.generate_outline_options",
+        fake_generate_outline_options,
+    )
+
+    response = await client.post(
+        "/internal/ai/stories/story-1/chapters/chapter-1/outline-options/generate",
+        json={
+            "authorIntent": {"goal": "open with pressure"},
+            "blueprint": {"premise": "A betrayed disciple follows dream fire."},
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "OPTION_GROUP_ID_REQUIRED"
+    assert detail["storyId"] == "story-1"
+    assert detail["chapterId"] == "chapter-1"
 
 
 def outline_options_payload(story_id: str, chapter_id: str, option_group_id: str):

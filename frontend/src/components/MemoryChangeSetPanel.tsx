@@ -21,11 +21,38 @@ const CHANGE_TYPES: Array<{
   key: MemoryChangeType
   label: string
   title: string
+  help: string
 }> = [
-  { key: 'timeline', label: 'Timeline', title: 'Timeline changes' },
-  { key: 'character', label: 'Character', title: 'Character changes' },
-  { key: 'world', label: 'World', title: 'World changes' },
-  { key: 'foreshadow', label: 'Foreshadow', title: 'Foreshadow changes' },
+  {
+    key: 'timeline',
+    label: 'Timeline',
+    title: 'Timeline changes',
+    help: 'Events, ordering, scene outcomes, and causal links.',
+  },
+  {
+    key: 'character',
+    label: 'Character',
+    title: 'Character changes',
+    help: 'Character state, relationships, goals, wounds, and secrets.',
+  },
+  {
+    key: 'world',
+    label: 'World',
+    title: 'World changes',
+    help: 'Rules, places, factions, resources, and world-state facts.',
+  },
+  {
+    key: 'foreshadow',
+    label: 'Foreshadow',
+    title: 'Foreshadow changes',
+    help: 'Planted clues, strengthened hints, triggers, and payoffs.',
+  },
+  {
+    key: 'conflicts',
+    label: 'Conflicts',
+    title: 'Conflict changes',
+    help: 'Open contradictions, continuity risks, and unresolved tension.',
+  },
 ]
 
 const EDITABLE_STAGES = ['draft_confirmed', 'memory_extracting', 'memory_pending_confirmation']
@@ -53,7 +80,6 @@ export function MemoryChangeSetPanel({
   const draftConfirmed = isDraftConfirmedStage(workflowStage)
   const canExtract = canLoad && EDITABLE_STAGES.includes(workflowStage)
   const canEdit = canLoad && EDITABLE_STAGES.includes(workflowStage)
-  const canConfirm = canEdit && selectedChangeSetId && activeChangeSetStatus(changeSets, selectedChangeSetId) !== 'confirmed'
   const canFreeze = canLoad && selectedChangeSetId && MEMORY_READY_STAGES.includes(workflowStage)
   const frozen = FINAL_STAGES.includes(workflowStage)
 
@@ -62,12 +88,22 @@ export function MemoryChangeSetPanel({
     [changeSets, selectedChangeSetId],
   )
 
+  const selectedStatus = activeChangeSetStatus(changeSets, selectedChangeSetId)
+  const savedDrafts = useMemo(() => buildDrafts(selectedChangeSet), [selectedChangeSet])
+  const validation = useMemo(() => validateDrafts(drafts), [drafts])
+  const allDraftsValid = CHANGE_TYPES.every((item) => validation[item.key].ok)
+  const hasUnsavedDrafts = CHANGE_TYPES.some((item) => drafts[item.key] !== savedDrafts[item.key])
+  const canSave = canEdit && Boolean(selectedChangeSetId) && hasUnsavedDrafts && allDraftsValid
+  const canConfirm = canEdit && Boolean(selectedChangeSetId) && selectedStatus !== 'confirmed' && allDraftsValid
+  const activeValidation = validation[activeType]
+  const activeMeta = CHANGE_TYPES.find((item) => item.key === activeType) || CHANGE_TYPES[0]
+
   const counts = useMemo(() => {
     const source = selectedChangeSet
     return CHANGE_TYPES.reduce<Record<MemoryChangeType, number>>((acc, item) => {
       acc[item.key] = source ? getChanges(source, item.key).length : 0
       return acc
-    }, { timeline: 0, character: 0, world: 0, foreshadow: 0 })
+    }, emptyCounts())
   }, [selectedChangeSet])
 
   async function loadChangeSets() {
@@ -150,19 +186,15 @@ export function MemoryChangeSetPanel({
     setError('')
     setNotice('')
     try {
-      const saved = await updateMemoryChangeSet(storyId, chapterId, selectedChangeSetId, {
-        timelineChanges: parsed.value.timeline,
-        timeline_changes: parsed.value.timeline,
-        characterChanges: parsed.value.character,
-        character_changes: parsed.value.character,
-        worldChanges: parsed.value.world,
-        world_changes: parsed.value.world,
-        foreshadowChanges: parsed.value.foreshadow,
-        foreshadow_changes: parsed.value.foreshadow,
-      })
+      const saved = await updateMemoryChangeSet(
+        storyId,
+        chapterId,
+        selectedChangeSetId,
+        buildUpdateRequest(parsed.value),
+      )
       setChangeSets((current) => sortChangeSets(upsertChangeSet(current, saved)))
       setSelectedChangeSetId(saved.id)
-      setNotice('Memory changes saved.')
+      setNotice('Memory changes saved. Review the staged changes before confirming.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save memory changes')
     } finally {
@@ -183,16 +215,12 @@ export function MemoryChangeSetPanel({
     setError('')
     setNotice('')
     try {
-      await updateMemoryChangeSet(storyId, chapterId, selectedChangeSetId, {
-        timelineChanges: parsed.value.timeline,
-        timeline_changes: parsed.value.timeline,
-        characterChanges: parsed.value.character,
-        character_changes: parsed.value.character,
-        worldChanges: parsed.value.world,
-        world_changes: parsed.value.world,
-        foreshadowChanges: parsed.value.foreshadow,
-        foreshadow_changes: parsed.value.foreshadow,
-      })
+      await updateMemoryChangeSet(
+        storyId,
+        chapterId,
+        selectedChangeSetId,
+        buildUpdateRequest(parsed.value),
+      )
       const result = await confirmMemoryChangeSet(storyId, chapterId, selectedChangeSetId)
       const changeSet = result.memoryChangeSet || result.memory_change_set
       if (changeSet?.id) {
@@ -204,7 +232,7 @@ export function MemoryChangeSetPanel({
       } else if (chapter) {
         onChapterUpdated?.({ ...chapter, workflowStage: 'memory_confirmed' })
       }
-      setNotice('Memory changes confirmed. Chapter freeze is now available.')
+      setNotice('Memory changes confirmed. Freeze is now available as the final chapter lock.')
     } catch (confirmError) {
       setError(confirmError instanceof Error ? confirmError.message : 'Failed to confirm memory changes')
     } finally {
@@ -226,7 +254,7 @@ export function MemoryChangeSetPanel({
         setSelectedChangeSetId(changeSet.id)
       }
       onChapterUpdated?.(result.chapter)
-      setNotice('Chapter frozen.')
+      setNotice('Chapter frozen. Editing is locked for this chapter.')
     } catch (freezeError) {
       setError(freezeError instanceof Error ? freezeError.message : 'Failed to freeze chapter')
     } finally {
@@ -326,7 +354,10 @@ export function MemoryChangeSetPanel({
                 </label>
                 <div className="memory-status-metrics" aria-label="Memory change counts">
                   {CHANGE_TYPES.map((item) => (
-                    <span key={item.key}>{item.label} {counts[item.key]}</span>
+                    <span key={item.key}>
+                      <strong>{counts[item.key]}</strong>
+                      {item.label}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -336,13 +367,20 @@ export function MemoryChangeSetPanel({
                   <button
                     key={item.key}
                     type="button"
-                    className={item.key === activeType ? 'active' : ''}
+                    className={[
+                      item.key === activeType ? 'active' : '',
+                      validation[item.key].ok ? 'valid' : 'invalid',
+                      drafts[item.key] !== savedDrafts[item.key] ? 'dirty' : '',
+                    ].filter(Boolean).join(' ')}
                     onClick={() => setActiveType(item.key)}
                     role="tab"
                     aria-selected={item.key === activeType}
                   >
-                    {item.label}
-                    <span>{counts[item.key]}</span>
+                    <span className="memory-tab-text">
+                      {item.label}
+                      <small>{validation[item.key].ok ? 'Valid array' : 'Invalid JSON'}</small>
+                    </span>
+                    <span className="memory-tab-count">{counts[item.key]}</span>
                   </button>
                 ))}
               </div>
@@ -351,24 +389,37 @@ export function MemoryChangeSetPanel({
                 <div className="memory-editor-heading">
                   <div>
                     <span className="memory-kicker">JSON array</span>
-                    <h3>{CHANGE_TYPES.find((item) => item.key === activeType)?.title}</h3>
+                    <h3>{activeMeta.title}</h3>
+                    <p>{activeMeta.help}</p>
                   </div>
                   <div className="memory-editor-actions">
                     <button
                       type="button"
                       onClick={() => handleAddChange(activeType)}
-                      disabled={!canEdit || working}
+                      disabled={!canEdit || working || !activeValidation.ok}
                     >
                       Add empty change
                     </button>
                     <button
                       type="button"
                       onClick={handleSave}
-                      disabled={!canEdit || working || !selectedChangeSetId}
+                      disabled={!canSave || working}
                     >
                       {working ? 'Saving' : 'Save edits'}
                     </button>
                   </div>
+                </div>
+
+                <div className="memory-json-state" aria-live="polite">
+                  <span className={activeValidation.ok ? 'valid' : 'invalid'}>
+                    {activeValidation.ok ? 'Valid JSON array' : activeValidation.message}
+                  </span>
+                  <span className={drafts[activeType] !== savedDrafts[activeType] ? 'dirty' : 'clean'}>
+                    {drafts[activeType] !== savedDrafts[activeType] ? 'Unsaved edits' : 'Saved'}
+                  </span>
+                  <span>
+                    {activeValidation.ok ? `${activeValidation.count} objects` : 'Fix before saving'}
+                  </span>
                 </div>
 
                 <textarea
@@ -381,10 +432,14 @@ export function MemoryChangeSetPanel({
                   rows={12}
                   spellCheck={false}
                   disabled={!canEdit || working || frozen}
+                  aria-invalid={!activeValidation.ok}
                 />
 
                 <div className="memory-index-actions">
-                  {Array.from({ length: counts[activeType] }).map((_, index) => (
+                  {activeValidation.ok && activeValidation.count === 0 && (
+                    <span>No objects in this category.</span>
+                  )}
+                  {activeValidation.ok && Array.from({ length: activeValidation.count }).map((_, index) => (
                     <button
                       key={`${activeType}-${index}`}
                       type="button"
@@ -398,14 +453,17 @@ export function MemoryChangeSetPanel({
               </div>
 
               <div className="memory-final-actions">
-                <p>
-                  {selectedChangeSet
-                    ? `Selected ${shortId(selectedChangeSet.id)} / ${selectedChangeSet.status || 'pending'}`
-                    : 'Select a memory change set before continuing.'}
-                </p>
-                <div>
+                <div className="memory-final-copy">
+                  <strong>
+                    {selectedChangeSet
+                      ? `${shortId(selectedChangeSet.id)} / ${selectedChangeSet.status || 'pending'}`
+                      : 'No change set selected'}
+                  </strong>
+                  <p>{nextActionMessage(workflowStage, hasUnsavedDrafts, allDraftsValid)}</p>
+                </div>
+                <div className="memory-final-buttons">
                   <button type="button" onClick={handleConfirm} disabled={!canConfirm || working}>
-                    {working ? 'Working' : 'Confirm memory changes'}
+                    {working ? 'Working' : hasUnsavedDrafts ? 'Save and confirm memory' : 'Confirm memory changes'}
                   </button>
                   <button type="button" onClick={handleFreeze} disabled={!canFreeze || working}>
                     {working ? 'Working' : frozen ? 'Frozen' : 'Freeze chapter'}
@@ -426,6 +484,17 @@ function emptyDrafts(): Record<MemoryChangeType, string> {
     character: '[]',
     world: '[]',
     foreshadow: '[]',
+    conflicts: '[]',
+  }
+}
+
+function emptyCounts(): Record<MemoryChangeType, number> {
+  return {
+    timeline: 0,
+    character: 0,
+    world: 0,
+    foreshadow: 0,
+    conflicts: 0,
   }
 }
 
@@ -436,6 +505,7 @@ function buildDrafts(changeSet: MemoryChangeSet | null): Record<MemoryChangeType
     character: stringifyJson(getChanges(changeSet, 'character')),
     world: stringifyJson(getChanges(changeSet, 'world')),
     foreshadow: stringifyJson(getChanges(changeSet, 'foreshadow')),
+    conflicts: stringifyJson(getChanges(changeSet, 'conflicts')),
   }
 }
 
@@ -445,7 +515,8 @@ function getChanges(changeSet: MemoryChangeSet, type: MemoryChangeType): MemoryC
   if (type === 'timeline') return changeSet.timelineChanges ?? changeSet.timeline_changes ?? []
   if (type === 'character') return changeSet.characterChanges ?? changeSet.character_changes ?? []
   if (type === 'world') return changeSet.worldChanges ?? changeSet.world_changes ?? []
-  return changeSet.foreshadowChanges ?? changeSet.foreshadow_changes ?? []
+  if (type === 'foreshadow') return changeSet.foreshadowChanges ?? changeSet.foreshadow_changes ?? []
+  return changeSet.conflicts ?? []
 }
 
 function parseDrafts(drafts: Record<MemoryChangeType, string>):
@@ -459,6 +530,8 @@ function parseDrafts(drafts: Record<MemoryChangeType, string>):
   if (!world.ok) return world
   const foreshadow = parseJsonArray(drafts.foreshadow, 'foreshadow')
   if (!foreshadow.ok) return foreshadow
+  const conflicts = parseJsonArray(drafts.conflicts, 'conflicts')
+  if (!conflicts.ok) return conflicts
   return {
     ok: true,
     value: {
@@ -466,7 +539,40 @@ function parseDrafts(drafts: Record<MemoryChangeType, string>):
       character: character.value,
       world: world.value,
       foreshadow: foreshadow.value,
+      conflicts: conflicts.value,
     },
+  }
+}
+
+function validateDrafts(drafts: Record<MemoryChangeType, string>):
+  Record<MemoryChangeType, { ok: true; count: number } | { ok: false; message: string }> {
+  return CHANGE_TYPES.reduce<Record<MemoryChangeType, { ok: true; count: number } | { ok: false; message: string }>>(
+    (acc, item) => {
+      const parsed = parseJsonArray(drafts[item.key], item.key)
+      acc[item.key] = parsed.ok ? { ok: true, count: parsed.value.length } : parsed
+      return acc
+    },
+    {
+      timeline: { ok: true, count: 0 },
+      character: { ok: true, count: 0 },
+      world: { ok: true, count: 0 },
+      foreshadow: { ok: true, count: 0 },
+      conflicts: { ok: true, count: 0 },
+    },
+  )
+}
+
+function buildUpdateRequest(parsed: Record<MemoryChangeType, MemoryChange[]>) {
+  return {
+    timelineChanges: parsed.timeline,
+    timeline_changes: parsed.timeline,
+    characterChanges: parsed.character,
+    character_changes: parsed.character,
+    worldChanges: parsed.world,
+    world_changes: parsed.world,
+    foreshadowChanges: parsed.foreshadow,
+    foreshadow_changes: parsed.foreshadow,
+    conflicts: parsed.conflicts,
   }
 }
 
@@ -551,6 +657,14 @@ function stageMessage(stage: string, count: number) {
   if (stage === 'memory_confirmed') return 'Memory changes are confirmed. Freeze the chapter to lock it.'
   if (stage === 'chapter_confirmed') return 'Chapter is frozen. Memory editing is locked.'
   return count ? 'Memory changes are available for this chapter.' : 'No memory changes are available yet.'
+}
+
+function nextActionMessage(stage: string, hasUnsavedDrafts: boolean, allDraftsValid: boolean) {
+  if (stage === 'chapter_confirmed') return 'Chapter is frozen. Memory editing and confirmation are locked.'
+  if (stage === 'memory_confirmed') return 'Memory is confirmed. Freeze the chapter when the final lock is intentional.'
+  if (!allDraftsValid) return 'Fix invalid JSON arrays before saving or confirming memory.'
+  if (hasUnsavedDrafts) return 'Confirm will save your valid edits first, then mark memory as confirmed.'
+  return 'Confirm memory after reviewing all categories. Freeze becomes available after confirmation.'
 }
 
 function changeSetLabel(changeSet: MemoryChangeSet) {

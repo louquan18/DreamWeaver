@@ -3,6 +3,8 @@ package com.dreamweaver.service;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -30,6 +32,11 @@ import com.dreamweaver.repository.StoryRepository;
 public class ChapterOutlineOptionService {
 
     private static final String AI_WORKER_ERROR = "ai_worker_error";
+    private static final Set<ChapterWorkflowStage> OUTLINE_OPTION_GENERATION_ALLOWED_STAGES = EnumSet.of(
+        ChapterWorkflowStage.CHAPTER_CREATED,
+        ChapterWorkflowStage.OUTLINE_OPTIONS_GENERATING,
+        ChapterWorkflowStage.OUTLINE_OPTIONS_GENERATED
+    );
 
     private final StoryRepository storyRepository;
     private final ChapterRepository chapterRepository;
@@ -59,6 +66,7 @@ public class ChapterOutlineOptionService {
     ) {
         Story story = getStory(storyId);
         Chapter chapter = getChapter(storyId, chapterId);
+        assertOutlineOptionsCanBeGenerated(chapter);
         NovelBlueprint blueprint = getConfirmedBlueprint(storyId);
         UUID optionGroupId = UUID.randomUUID();
 
@@ -109,6 +117,15 @@ public class ChapterOutlineOptionService {
                 "blueprint_not_confirmed",
                 "Story blueprint must be confirmed before outline generation: " + storyId
             ));
+    }
+
+    private void assertOutlineOptionsCanBeGenerated(Chapter chapter) {
+        if (!OUTLINE_OPTION_GENERATION_ALLOWED_STAGES.contains(chapter.getWorkflowStage())) {
+            throw new ConflictException(
+                "outline_options_stage_locked",
+                "Chapter outline options cannot be generated after outline confirmation: " + chapter.getId()
+            );
+        }
     }
 
     private Map<String, Object> storyContext(Story story) {

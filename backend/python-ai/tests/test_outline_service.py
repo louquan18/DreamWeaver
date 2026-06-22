@@ -150,6 +150,27 @@ async def test_generate_outline_options_rejects_invalid_json():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("raw_response", ["", "   ", "```json\n\n```"])
+async def test_generate_outline_options_rejects_empty_llm_response(raw_response: str):
+    with pytest.raises(OutlineGenerationError, match="empty response"):
+        await generate_outline_options(
+            story_id="story-1",
+            chapter_id="chapter-2",
+            llm=FakeLLM(raw_response),
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_outline_options_rejects_non_string_llm_response():
+    with pytest.raises(OutlineGenerationError, match="content must be a string"):
+        await generate_outline_options(
+            story_id="story-1",
+            chapter_id="chapter-2",
+            llm=FakeLLM({"not": "text"}),
+        )
+
+
+@pytest.mark.asyncio
 async def test_generate_outline_options_rejects_missing_required_field():
     payload = _valid_payload()
     del payload["options"][0]["chapterGoal"]

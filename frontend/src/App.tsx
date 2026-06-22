@@ -87,7 +87,7 @@ function App() {
       </header>
 
       <main className="app-main">
-        <div className="left-panel">
+        <aside className="workspace-sidebar" aria-label="Blueprint and chapter navigation">
           <NovelIdeaChat onStoryCreated={handleStoryCreated} />
           <CreationConsole
             onGenerate={handleGenerate}
@@ -100,10 +100,36 @@ function App() {
             status={state.status}
             errorMessage={state.errorMessage}
           />
+        </aside>
+
+        <section className="workspace-editor" aria-label="Chapter draft workspace">
+          <LivePreview
+            draft={previewText}
+            isGenerating={isGenerating}
+            status={state.status}
+            errorMessage={draftConfirmError || state.errorMessage}
+            generationId={state.generationId}
+            generation={selectedGeneration}
+            chapter={selectedChapter}
+            runtimeHistory={state.executionHistory}
+            confirming={draftConfirming}
+            onConfirmDraft={handleConfirmDraft}
+          />
+        </section>
+
+        <aside className="workspace-rail" aria-label="Agent workflow assistance">
           <AgentStatus
             currentNode={state.currentNode}
             executionHistory={state.executionHistory}
             progress={state.progress}
+            status={state.status}
+            generationId={state.generationId}
+            draftLength={state.draft.length}
+            tokenEventCount={state.tokenEventCount}
+            tokenCharCount={state.tokenCharCount}
+            tokenPreview={state.tokenPreview}
+            errorMessage={state.errorMessage}
+            agentEvents={state.agentEvents}
           />
           <GenerationHistory
             storyId={selectedStory?.id}
@@ -112,9 +138,6 @@ function App() {
             onGenerationSelected={handleGenerationSelected}
             onConfirmed={handleChapterUpdated}
           />
-        </div>
-
-        <div className="right-panel">
           <OutlineOptionsPanel
             storyId={selectedStory?.id}
             chapterId={selectedChapter?.id}
@@ -129,19 +152,7 @@ function App() {
             refreshKey={chapterRefreshKey}
             onChapterUpdated={handleChapterUpdated}
           />
-          <LivePreview
-            draft={previewText}
-            isGenerating={isGenerating}
-            status={state.status}
-            errorMessage={draftConfirmError || state.errorMessage}
-            generationId={state.generationId}
-            generation={selectedGeneration}
-            chapter={selectedChapter}
-            runtimeHistory={state.executionHistory}
-            confirming={draftConfirming}
-            onConfirmDraft={handleConfirmDraft}
-          />
-        </div>
+        </aside>
       </main>
     </div>
   )

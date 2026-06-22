@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build --configLoader runner",
     "lint": "eslint .",
     "test:api-boundary": "node --test src/services/api-boundary.test.mjs",
+    "test:workbench": "node --test src/services/workbench-flow.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

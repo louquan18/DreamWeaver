@@ -322,6 +322,9 @@ def _parse_json_object(content: str) -> dict[str, Any]:
         if start != -1 and end != -1 and start < end:
             text = text[start : end + 1]
 
+    if not text:
+        raise OutlineGenerationError("LLM returned an empty response for outline options")
+
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:

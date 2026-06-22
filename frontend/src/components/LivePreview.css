@@ -74,6 +74,19 @@
   padding: 0 10px;
 }
 
+.confirm-draft-button.confirm-state-blocked {
+  background: rgba(255, 107, 122, 0.12);
+  border-color: rgba(255, 107, 122, 0.5);
+  color: #ff9aa7;
+}
+
+.confirm-draft-button.confirm-state-generating,
+.confirm-draft-button.confirm-state-waiting {
+  background: rgba(158, 168, 184, 0.1);
+  border-color: rgba(158, 168, 184, 0.35);
+  color: #c9d3e2;
+}
+
 .confirm-draft-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -86,6 +99,89 @@
   font-size: 13px;
   margin-bottom: 12px;
   padding: 10px;
+}
+
+.draft-readiness {
+  align-items: flex-start;
+  background: #101522;
+  border: 1px solid #273144;
+  border-left: 4px solid #7aa2ff;
+  border-radius: 6px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.draft-readiness.readiness-success {
+  border-left-color: #61d39b;
+}
+
+.draft-readiness.readiness-danger {
+  border-left-color: #ff6b7a;
+}
+
+.draft-readiness.readiness-active {
+  border-left-color: #ffd166;
+}
+
+.draft-readiness.readiness-muted {
+  border-left-color: #6d7789;
+}
+
+.readiness-kicker {
+  color: #9ea8b8;
+  display: block;
+  font-size: 11px;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+}
+
+.draft-readiness strong {
+  color: #fff;
+  display: block;
+  font-size: 14px;
+}
+
+.draft-readiness p {
+  color: #b8c2d1;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 4px 0 0;
+  max-width: 620px;
+}
+
+.readiness-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  max-width: 360px;
+}
+
+.readiness-checks span {
+  border: 1px solid #313a50;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.readiness-checks .check-ok {
+  border-color: rgba(97, 211, 155, 0.38);
+  color: #8af0bc;
+}
+
+.readiness-checks .check-wait {
+  border-color: rgba(158, 168, 184, 0.35);
+  color: #c9d3e2;
+}
+
+.readiness-checks .check-blocked {
+  border-color: rgba(255, 107, 122, 0.45);
+  color: #ff9aa7;
 }
 
 .preview-layout {
@@ -187,12 +283,60 @@
   margin: 0;
 }
 
+.issue-summary {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.issue-summary span {
+  background: #151c2d;
+  border: 1px solid #273144;
+  border-radius: 5px;
+  color: #9ea8b8;
+  display: flex;
+  flex-direction: column;
+  font-size: 10px;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+  text-transform: uppercase;
+}
+
+.issue-summary strong {
+  color: #fff;
+  font-size: 15px;
+}
+
 .issue-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   max-height: 310px;
   overflow: auto;
+}
+
+.issue-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue-group-title {
+  align-items: center;
+  color: #c9d3e2;
+  display: flex;
+  font-size: 11px;
+  font-weight: 700;
+  justify-content: space-between;
+  text-transform: uppercase;
+}
+
+.issue-group-title em {
+  color: #9ea8b8;
+  font-style: normal;
+  font-weight: 600;
 }
 
 .issue-card {
@@ -200,6 +344,14 @@
   background: #151c2d;
   border-radius: 5px;
   padding: 10px;
+}
+
+.issue-card.is-blocking {
+  background: #1d1825;
+}
+
+.issue-card.is-advisory {
+  background: #141d2c;
 }
 
 .issue-card.severity-p0 {
@@ -222,7 +374,8 @@
   margin-bottom: 6px;
 }
 
-.issue-title span {
+.severity-badge,
+.source-badge {
   background: #202a3f;
   border-radius: 4px;
   color: #fff;
@@ -231,8 +384,19 @@
   padding: 2px 5px;
 }
 
+.source-badge.source-review {
+  background: rgba(122, 162, 255, 0.18);
+  color: #aac2ff;
+}
+
+.source-badge.source-consistency {
+  background: rgba(255, 209, 102, 0.16);
+  color: #ffe29c;
+}
+
 .issue-title strong {
-  font-size: 12px;
+  color: #d6dee9;
+  font-size: 11px;
 }
 
 .issue-title em {
@@ -327,7 +491,16 @@
     flex-direction: column;
   }
 
+  .draft-readiness {
+    flex-direction: column;
+  }
+
   .preview-meta {
     justify-content: flex-start;
+  }
+
+  .readiness-checks {
+    justify-content: flex-start;
+    max-width: none;
   }
 }

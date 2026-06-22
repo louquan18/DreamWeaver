@@ -15,6 +15,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -154,6 +156,33 @@ class ChapterOutlineOptionServiceTests {
             .isInstanceOf(AiWorkerException.class)
             .hasMessageContaining("different chapter");
 
+        verify(optionRepository, never()).saveAll(any());
+        verify(chapterRepository, never()).save(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+        value = ChapterWorkflowStage.class,
+        names = {
+            "OUTLINE_CONFIRMED",
+            "DRAFT_GENERATING",
+            "DRAFT_READY_FOR_CONFIRMATION",
+            "DRAFT_CONFIRMED",
+            "MEMORY_PENDING_CONFIRMATION",
+            "MEMORY_CONFIRMED",
+            "CHAPTER_CONFIRMED"
+        }
+    )
+    void generateRejectsLaterWorkflowStagesWithoutRegressingChapter(ChapterWorkflowStage laterStage) {
+        chapter.setWorkflowStage(laterStage);
+        arrangeStoryAndChapter();
+
+        assertThatThrownBy(() -> service.generate(STORY_ID, CHAPTER_ID, null))
+            .isInstanceOf(ConflictException.class)
+            .hasMessageContaining("outline options");
+
+        assertThat(chapter.getWorkflowStage()).isEqualTo(laterStage);
+        verify(aiOutlineClient, never()).generateOutlineOptions(any(), any(), any());
         verify(optionRepository, never()).saveAll(any());
         verify(chapterRepository, never()).save(any());
     }

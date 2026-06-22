@@ -15,6 +15,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -210,6 +212,36 @@ class ChapterOutlineServiceTests {
             .hasMessageContaining("finalOutline.endingHook is required");
 
         verify(outlineRepository, never()).saveAndFlush(any(ChapterOutline.class));
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+        value = ChapterWorkflowStage.class,
+        names = {
+            "DRAFT_GENERATING",
+            "DRAFT_READY_FOR_CONFIRMATION",
+            "DRAFT_CONFIRMED",
+            "MEMORY_PENDING_CONFIRMATION",
+            "MEMORY_CONFIRMED",
+            "CHAPTER_CONFIRMED"
+        }
+    )
+    void confirmRejectsLaterWorkflowStagesWithoutRegressingChapter(ChapterWorkflowStage laterStage) {
+        chapter.setWorkflowStage(laterStage);
+        arrangeStoryAndChapter();
+
+        assertThatThrownBy(() -> service.confirm(
+            STORY_ID,
+            CHAPTER_ID,
+            new ChapterOutlineConfirmRequest(List.of(OPTION_A_ID), null, null)
+        ))
+            .isInstanceOf(ConflictException.class)
+            .hasMessageContaining("outline");
+
+        assertThat(chapter.getWorkflowStage()).isEqualTo(laterStage);
+        verify(optionRepository, never()).findByIdAndStoryIdAndChapterId(any(), any(), any());
+        verify(outlineRepository, never()).saveAndFlush(any(ChapterOutline.class));
+        verify(chapterRepository, never()).save(any(Chapter.class));
     }
 
     private void arrangeStoryAndChapter() {

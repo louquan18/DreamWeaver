@@ -59,6 +59,44 @@ async def test_internal_draft_stream_uses_confirmed_outline(monkeypatch, client)
 
 
 @pytest.mark.asyncio
+async def test_internal_draft_stream_route_passes_java_confirmed_context(monkeypatch, client):
+    captured = {}
+
+    async def fake_stream_generate_draft(request, *, story_id, chapter_id):
+        captured["request_type"] = type(request)
+        captured["payload"] = request.writer_payload()
+        captured["story_id"] = story_id
+        captured["chapter_id"] = chapter_id
+        yield type(
+            "Event",
+            (),
+            {"event": "done", "data": {"draft": "route ok", "tokens_streamed": 0}},
+        )()
+
+    monkeypatch.setattr(
+        "src.api.routes.drafts.stream_generate_draft",
+        fake_stream_generate_draft,
+    )
+
+    response = await client.post(
+        "/internal/ai/stories/story-1/chapters/chapter-1/drafts/stream",
+        json=draft_request_payload(),
+    )
+
+    assert response.status_code == 200
+    assert "route ok" in response.text
+    assert captured["request_type"] is DraftGenerateRequest
+    assert captured["story_id"] == "story-1"
+    assert captured["chapter_id"] == "chapter-1"
+    assert captured["payload"]["blueprint"]["lockedFacts"][0]["text"] == (
+        "Dream fire cannot show complete futures"
+    )
+    assert captured["payload"]["confirmedOutline"]["finalOutline"]["endingHook"] == (
+        "The mirror speaks."
+    )
+
+
+@pytest.mark.asyncio
 async def test_internal_draft_stream_rejects_missing_confirmed_outline(client):
     payload = draft_request_payload()
     payload["confirmedOutline"] = {}

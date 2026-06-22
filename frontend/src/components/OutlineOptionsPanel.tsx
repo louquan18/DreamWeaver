@@ -54,8 +54,8 @@ export function OutlineOptionsPanel({
   const [detailsOpen, setDetailsOpen] = useState(false)
 
   const canLoad = Boolean(storyId && chapterId)
-  const workflowStage = chapter?.workflowStage ?? chapter?.workflow_stage
-  const outlineConfirmed = workflowStage === 'outline_confirmed'
+  const workflowStage = normalizeStage(chapter?.workflowStage ?? chapter?.workflow_stage)
+  const outlineConfirmed = isOutlineConfirmedStage(workflowStage)
 
   const loadOptions = useCallback(async () => {
     if (!storyId || !chapterId) {
@@ -108,8 +108,24 @@ export function OutlineOptionsPanel({
     () => grouped.find((option) => option.id === primaryOptionId),
     [grouped, primaryOptionId],
   )
+  const selectedOptions = useMemo(
+    () => grouped.filter((option) => Boolean(option.id && selectedIdSet.has(option.id))),
+    [grouped, selectedIdSet],
+  )
+  const mixedOptions = useMemo(
+    () => selectedOptions.filter((option) => option.id !== primaryOptionId),
+    [primaryOptionId, selectedOptions],
+  )
+  const sourceOptions = useMemo(() => {
+    if (!primaryOption || selectedOptions.some((option) => option.id === primaryOption.id)) {
+      return selectedOptions
+    }
+    return [primaryOption, ...selectedOptions]
+  }, [primaryOption, selectedOptions])
   const canConfirm = Boolean(storyId && chapterId && primaryOption?.id && isOptionConfirmable(primaryOption))
   const showDetails = !outlineConfirmed || detailsOpen
+  const primaryLabel = primaryOption ? `Option ${optionCode(primaryOption)}` : 'None'
+  const sourceLabels = sourceOptions.map((option) => `Option ${optionCode(option)}`)
 
   async function handleGenerateOptions() {
     if (!storyId || !chapterId || generating) return
@@ -229,29 +245,56 @@ export function OutlineOptionsPanel({
               <div>
                 <span className="outline-kicker">Outline confirmed</span>
                 <strong>
-                  {primaryOption ? `Option ${optionCode(primaryOption)}` : 'Final outline saved'}
+                  {primaryOption ? `${primaryLabel} saved as final outline` : 'Final outline saved'}
                 </strong>
                 <p>
-                  Sources: {selectedOptionIds.length || 1}. Draft generation can use the confirmed outline.
+                  Sources: {sourceLabels.length > 0 ? sourceLabels.join(', ') : primaryLabel}. Draft generation can use the confirmed outline.
                 </p>
               </div>
               <button type="button" onClick={() => setDetailsOpen((open) => !open)}>
                 {detailsOpen ? 'Hide outline' : 'View outline'}
               </button>
             </div>
-          )}
+            )}
 
           {!outlineConfirmed && (
             <div className="outline-confirm-box">
-              <div>
-                <span className="outline-kicker">Editor decision</span>
-                <h3>Confirm final outline</h3>
-                <p>
-                  Pick one primary route, optionally mix in other cards, then leave direction notes for the final outline.
-                </p>
+              <div className="outline-decision-header">
+                <div>
+                  <span className="outline-kicker">Editor decision</span>
+                  <h3>Confirm final outline</h3>
+                  <p>
+                    The primary route becomes the saved final outline. Mixed sources and direction notes are sent as guidance.
+                  </p>
+                </div>
+                <div className="outline-source-summary" aria-label="Selected outline sources">
+                  <span>Primary</span>
+                  <strong>{primaryLabel}</strong>
+                  <span>Mixed sources</span>
+                  <strong>
+                    {mixedOptions.length > 0 ? mixedOptions.map((option) => optionCode(option)).join(' + ') : 'None'}
+                  </strong>
+                </div>
               </div>
+
+              <OutlineComparison options={grouped} primaryOptionId={primaryOptionId} selectedIdSet={selectedIdSet} />
+
+              <div className="outline-source-chips" aria-label="Final outline source selection">
+                {grouped.map((option) => {
+                  const code = optionCode(option)
+                  const active = Boolean(option.id && selectedIdSet.has(option.id))
+                  const primary = option.id === primaryOptionId
+                  return (
+                    <span key={`source-${option.id || code}`} className={active ? 'selected' : ''}>
+                      {code}
+                      {primary ? ' primary' : active ? ' mixed' : ' available'}
+                    </span>
+                  )
+                })}
+              </div>
+
               <label>
-                <span>Mixing notes</span>
+                <span>Final outline direction</span>
                 <textarea
                   value={userFeedback}
                   onChange={(event) => {
@@ -260,14 +303,14 @@ export function OutlineOptionsPanel({
                   }}
                   rows={4}
                   maxLength={2000}
-                  placeholder="Example: Use B's confrontation, keep A's emotional pacing, and preserve C's ending hook."
+                  placeholder="Example: Save A as the base, borrow B's confrontation pressure, and preserve C's ending hook for the next chapter."
                   disabled={confirming}
                 />
               </label>
               <div className="outline-confirm-actions">
                 <p>
                   {primaryOption
-                    ? `Primary: option ${optionCode(primaryOption)}. Sources: ${selectedOptionIds.length}.`
+                    ? `Saving ${primaryLabel} with ${sourceLabels.length} source${sourceLabels.length === 1 ? '' : 's'}: ${sourceLabels.join(', ')}.`
                     : 'Choose a primary option before confirming.'}
                 </p>
                 <button type="button" onClick={handleConfirmOutline} disabled={!canConfirm || confirming}>
@@ -295,6 +338,49 @@ export function OutlineOptionsPanel({
         </>
       )}
     </section>
+  )
+}
+
+function OutlineComparison({
+  options,
+  primaryOptionId,
+  selectedIdSet,
+}: {
+  options: ChapterOutlineOption[]
+  primaryOptionId: string
+  selectedIdSet: Set<string>
+}) {
+  return (
+    <div className="outline-comparison" aria-label="A/B/C route comparison">
+      <div className="outline-comparison-head">
+        <span>Route</span>
+        <span>Core move</span>
+        <span>Scene shape</span>
+        <span>Hook</span>
+      </div>
+      {options.map((option) => {
+        const code = optionCode(option)
+        const isPrimary = option.id === primaryOptionId
+        const isSelected = Boolean(option.id && selectedIdSet.has(option.id))
+        const scenes = option.sceneOutline ?? option.scene_outline ?? []
+        const hook = option.endingHook ?? option.ending_hook ?? option.highlightMoment ?? option.highlight_moment
+        const goal = option.chapterGoal ?? option.chapter_goal ?? 'No goal returned.'
+        return (
+          <div
+            className={`outline-comparison-row ${isPrimary ? 'primary' : ''} ${isSelected ? 'selected' : ''}`}
+            key={`compare-${option.id || code}`}
+          >
+            <strong>
+              {code}
+              <span>{OPTION_COPY[code]?.signal || optionType(option)}</span>
+            </strong>
+            <p>{goal}</p>
+            <span>{scenes.length || 0} beats</span>
+            <p>{hook || 'No hook returned.'}</p>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -330,7 +416,7 @@ function OutlineOptionCard({
   const whyThisPlan = option.whyThisPlan ?? option.why_this_plan
 
   return (
-    <article className={`outline-card option-${code.toLowerCase()} ${isPrimary ? 'primary' : ''}`}>
+    <article className={`outline-card option-${code.toLowerCase()} ${isPrimary ? 'primary' : ''} ${isSelected ? 'selected' : ''}`}>
       <div className="outline-card-top">
         <div className="option-mark" aria-label={`Option ${code}`}>
           {code}
@@ -339,6 +425,11 @@ function OutlineOptionCard({
           <h3>{copy.title}</h3>
           <span>{copy.detail} / {copy.signal}</span>
         </div>
+      </div>
+
+      <div className="outline-card-state" aria-label={`Option ${code} selection state`}>
+        <span className={isPrimary ? 'primary' : ''}>{isPrimary ? 'Primary base' : 'Alternative'}</span>
+        <span className={isSelected ? 'selected' : ''}>{isSelected ? 'Included source' : 'Not mixed'}</span>
       </div>
 
       <div className="outline-title-row">
@@ -455,6 +546,26 @@ function isOptionConfirmable(option: ChapterOutlineOption) {
       && finalOutline.whyThisPlan
       && finalOutline.endingHook,
   )
+}
+
+function normalizeStage(value?: string) {
+  return (value || '').toLowerCase()
+}
+
+function isOutlineConfirmedStage(stage: string) {
+  return [
+    'outline_confirmed',
+    'draft_generating',
+    'draft_generated',
+    'draft_ready_for_confirmation',
+    'reviewing',
+    'revision_required',
+    'draft_confirmed',
+    'memory_extracting',
+    'memory_pending_confirmation',
+    'memory_confirmed',
+    'chapter_confirmed',
+  ].includes(stage)
 }
 
 function buildFinalOutline(option: ChapterOutlineOption): Record<string, unknown> {
