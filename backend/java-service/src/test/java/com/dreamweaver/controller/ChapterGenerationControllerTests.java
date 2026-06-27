@@ -52,6 +52,31 @@ class ChapterGenerationControllerTests {
         assertThat(payload.get("confirmedOutline"))
             .isEqualTo(Map.of("finalOutline", Map.of("endingHook", "The mirror speaks.")));
         assertThat(payload.get("recentChapters")).asList().hasSize(1);
+        assertThat(payload.get("timeline")).isEqualTo(List.of(Map.of("id", "tl-1")));
+        assertThat(payload.get("characters")).isEqualTo(List.of(Map.of("name", "Lin Jin")));
+        assertThat(payload.get("world")).isEqualTo(List.of(Map.of("subject", "Mirror fire")));
+        assertThat(payload.get("foreshadows")).isEqualTo(List.of(Map.of("id", "fs-1", "status", "triggered")));
+        assertThat(payload.get("additionalMemory")).isEqualTo(List.of());
+        assertThat(payload.get("contextMetadata")).isEqualTo(Map.of("policy", "structured-memory-v1"));
+    }
+
+    @Test
+    void pythonDraftRequestDefaultsStructuredMemoryForOldGenerationSnapshots() {
+        ChapterGenerationController controller = new ChapterGenerationController(
+            Mockito.mock(ChapterGenerationService.class),
+            Mockito.mock(ChapterService.class),
+            new ObjectMapper(),
+            "http://python-ai:8000"
+        );
+
+        Map<String, Object> payload = controller.pythonDraftRequest(oldGenerationSnapshot());
+
+        assertThat(payload.get("timeline")).isEqualTo(List.of());
+        assertThat(payload.get("characters")).isEqualTo(List.of());
+        assertThat(payload.get("world")).isEqualTo(List.of());
+        assertThat(payload.get("foreshadows")).isEqualTo(List.of());
+        assertThat(payload.get("additionalMemory")).isEqualTo(List.of());
+        assertThat(payload.get("contextMetadata")).isEqualTo(Map.of());
     }
 
     @Test
@@ -118,6 +143,36 @@ class ChapterGenerationControllerTests {
     }
 
     private ChapterGeneration generation() {
+        ChapterGeneration generation = new ChapterGeneration();
+        generation.setId(GENERATION_ID);
+        generation.setStoryId(STORY_ID);
+        generation.setChapterId(CHAPTER_ID);
+        generation.setUserId(USER_ID);
+        generation.setRequest(Map.of(
+            "extra_prompt", "Keep the ending ominous.",
+            "target_words", 2000,
+            "model_profile", "writing",
+            "writing_context", Map.ofEntries(
+                Map.entry("story", Map.of("title", "Dream Fire")),
+                Map.entry("chapter", Map.of("chapterNumber", 3)),
+                Map.entry("blueprint", Map.of("premise", "A betrayed disciple follows dream fire.")),
+                Map.entry("confirmedOutline", Map.of(
+                    "finalOutline",
+                    Map.of("endingHook", "The mirror speaks.")
+                )),
+                Map.entry("recentChapters", List.of(Map.of("title", "Ash Road"))),
+                Map.entry("timeline", List.of(Map.of("id", "tl-1"))),
+                Map.entry("characters", List.of(Map.of("name", "Lin Jin"))),
+                Map.entry("world", List.of(Map.of("subject", "Mirror fire"))),
+                Map.entry("foreshadows", List.of(Map.of("id", "fs-1", "status", "triggered"))),
+                Map.entry("additionalMemory", List.of()),
+                Map.entry("contextMetadata", Map.of("policy", "structured-memory-v1"))
+            )
+        ));
+        return generation;
+    }
+
+    private ChapterGeneration oldGenerationSnapshot() {
         ChapterGeneration generation = new ChapterGeneration();
         generation.setId(GENERATION_ID);
         generation.setStoryId(STORY_ID);

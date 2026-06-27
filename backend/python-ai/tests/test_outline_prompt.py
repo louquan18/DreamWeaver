@@ -1,7 +1,5 @@
 import json
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from src.services.outline_prompt import (
     OutlineOptionsPromptContext,
     build_outline_options_prompt,
@@ -33,18 +31,21 @@ def test_outline_options_prompt_builds_system_and_human_messages():
     messages = build_outline_options_prompt(context)
 
     assert len(messages) == 2
-    assert isinstance(messages[0], SystemMessage)
-    assert isinstance(messages[1], HumanMessage)
-    assert '"storyId": "story-1"' in messages[1].content
-    assert '"chapterId": "chapter-2"' in messages[1].content
-    assert '"id": "fs-001"' in messages[1].content
-    assert "黑影身份暂不揭露" in messages[1].content
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+    assert '"storyId": "story-1"' in messages[1]["content"]
+    assert '"chapterId": "chapter-2"' in messages[1]["content"]
+    assert '"id": "fs-001"' in messages[1]["content"]
+    assert "Recent chapter compression rules" in messages[1]["content"]
+    assert 'contextRole="recent_summary"' in messages[1]["content"]
+    assert "additionalMemory is supplemental retrieval material" in messages[1]["content"]
+    assert "黑影身份暂不揭露" in messages[1]["content"]
 
 
 def test_outline_options_prompt_requires_chapter_outline_options_schema():
     system_prompt = build_outline_options_prompt(
         OutlineOptionsPromptContext(story_id="story-1", chapter_id="chapter-1")
-    )[0].content
+    )[0]["content"]
 
     assert "ChapterOutlineOptionsDraft schema" in system_prompt
     assert "只输出一个 JSON object" in system_prompt
@@ -60,8 +61,8 @@ def test_outline_options_prompt_pins_a_b_c_option_codes_and_types():
     messages = build_outline_options_prompt(
         OutlineOptionsPromptContext(story_id="story-1", chapter_id="chapter-1")
     )
-    system_prompt = messages[0].content
-    human_payload = _extract_json_block(messages[1].content, "固定元数据：", "小说蓝图：")
+    system_prompt = messages[0]["content"]
+    human_payload = _extract_json_block(messages[1]["content"], "固定元数据：", "小说蓝图：")
 
     assert 'optionCode="A" 且 optionType="steady"' in system_prompt
     assert 'optionCode="B" 且 optionType="conflict"' in system_prompt
@@ -76,7 +77,7 @@ def test_outline_options_prompt_pins_a_b_c_option_codes_and_types():
 def test_outline_options_prompt_documents_c_foreshadow_fallback_rules():
     system_prompt = build_outline_options_prompt(
         OutlineOptionsPromptContext(story_id="story-1", chapter_id="chapter-1")
-    )[0].content
+    )[0]["content"]
 
     assert "C 方案伏笔兜底规则" in system_prompt
     assert "优先回收已有伏笔" in system_prompt
@@ -99,7 +100,7 @@ def test_outline_options_prompt_has_context_slots_for_future_context_loader():
             character_memory=[{"id": "char-001"}],
             world_memory=[{"id": "world-001"}],
         )
-    )[1].content
+    )[1]["content"]
 
     assert "近期历史章节" in human_prompt
     assert "时间线记忆" in human_prompt

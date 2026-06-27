@@ -11,7 +11,7 @@ import com.dreamweaver.entity.OutlineOptionStatus;
 
 public interface ChapterOutlineOptionRepository extends JpaRepository<ChapterOutlineOption, UUID> {
 
-    List<ChapterOutlineOption> findByStoryIdAndChapterIdOrderByCreatedAtDesc(
+    Optional<ChapterOutlineOption> findFirstByStoryIdAndChapterIdOrderByCreatedAtDesc(
         UUID storyId,
         UUID chapterId
     );

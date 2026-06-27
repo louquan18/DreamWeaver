@@ -59,6 +59,15 @@ class ChapterOutlineOptionServiceTests {
     @Mock
     private AiOutlineClient aiOutlineClient;
 
+    @Mock
+    private StoryMemoryService storyMemoryService;
+
+    @Mock
+    private ChapterMemorySummaryService chapterMemorySummaryService;
+
+    @Mock
+    private AdditionalMemoryRetriever additionalMemoryRetriever;
+
     private ChapterOutlineOptionService service;
     private Story story;
     private Chapter chapter;
@@ -70,7 +79,10 @@ class ChapterOutlineOptionServiceTests {
             chapterRepository,
             blueprintRepository,
             optionRepository,
-            aiOutlineClient
+            aiOutlineClient,
+            storyMemoryService,
+            chapterMemorySummaryService,
+            additionalMemoryRetriever
         );
         story = story();
         chapter = chapter();
@@ -80,6 +92,7 @@ class ChapterOutlineOptionServiceTests {
     void generateSavesThreeOptionsAndMarksChapterOutlineOptionsGenerated() {
         arrangeStoryAndChapter();
         arrangeConfirmedBlueprint();
+        arrangeMemoryContext();
         when(aiOutlineClient.generateOutlineOptions(any(), any(), any(AiOutlineOptionsGenerateRequest.class)))
             .thenAnswer(invocation -> {
                 AiOutlineOptionsGenerateRequest request = invocation.getArgument(2);
@@ -111,10 +124,26 @@ class ChapterOutlineOptionServiceTests {
         Chapter previous = previousChapter();
         arrangeStoryAndChapter();
         arrangeConfirmedBlueprint();
+        when(storyMemoryService.buildOutlineMemoryContext(STORY_ID)).thenReturn(memoryContext());
         when(chapterRepository.findByStoryIdOrderByChapterNumberAsc(STORY_ID)).thenReturn(List.of(
             previous,
             chapter
         ));
+        when(chapterMemorySummaryService.recentChapterContexts(STORY_ID, chapter, List.of(previous, chapter)))
+            .thenReturn(List.of(Map.of(
+                "title",
+                "Old Gate",
+                "content",
+                "Ming sealed the old gate.",
+                "contextRole",
+                "recent_full_text"
+            )));
+        when(additionalMemoryRetriever.retrieve(any(), any(), any(), any(), any(), any())).thenReturn(List.of(Map.of(
+            "type",
+            "foreshadow",
+            "content",
+            "The mirror token is burning."
+        )));
         when(aiOutlineClient.generateOutlineOptions(any(), any(), any(AiOutlineOptionsGenerateRequest.class)))
             .thenAnswer(invocation -> {
                 AiOutlineOptionsGenerateRequest request = invocation.getArgument(2);
@@ -126,11 +155,16 @@ class ChapterOutlineOptionServiceTests {
                 assertThat(request.recentChapters().get(0))
                     .containsEntry("title", "Old Gate")
                     .containsEntry("content", "Ming sealed the old gate.");
-                assertThat(request.timeline()).isEmpty();
-                assertThat(request.characters()).isEmpty();
-                assertThat(request.world()).isEmpty();
-                assertThat(request.foreshadows()).isEmpty();
-                assertThat(request.additionalMemory()).isEmpty();
+                assertThat(request.timeline()).containsExactly(Map.of("id", "tl-1", "event", "Ming sealed the gate"));
+                assertThat(request.characters()).containsExactly(Map.of("name", "Ming"));
+                assertThat(request.world()).containsExactly(Map.of("subject", "Blood seals"));
+                assertThat(request.foreshadows()).containsExactly(Map.of("id", "fs-1", "status", "planted"));
+                assertThat(request.additionalMemory()).containsExactly(Map.of(
+                    "type",
+                    "foreshadow",
+                    "content",
+                    "The mirror token is burning."
+                ));
                 return generated(CHAPTER_ID.toString(), request.optionGroupId());
             });
         when(optionRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -146,6 +180,7 @@ class ChapterOutlineOptionServiceTests {
     void generateRejectsAiOptionsForDifferentChapter() {
         arrangeStoryAndChapter();
         arrangeConfirmedBlueprint();
+        arrangeMemoryContext();
         when(aiOutlineClient.generateOutlineOptions(any(), any(), any(AiOutlineOptionsGenerateRequest.class)))
             .thenAnswer(invocation -> {
                 AiOutlineOptionsGenerateRequest request = invocation.getArgument(2);
@@ -197,6 +232,24 @@ class ChapterOutlineOptionServiceTests {
             STORY_ID,
             NovelBlueprintStatus.CONFIRMED
         )).thenReturn(Optional.of(blueprint()));
+    }
+
+    private void arrangeMemoryContext() {
+        when(storyMemoryService.buildOutlineMemoryContext(STORY_ID)).thenReturn(
+            new StoryMemoryService.MemoryContext(List.of(), List.of(), List.of(), List.of(), List.of())
+        );
+        when(chapterMemorySummaryService.recentChapterContexts(any(), any(), any())).thenReturn(List.of());
+        when(additionalMemoryRetriever.retrieve(any(), any(), any(), any(), any(), any())).thenReturn(List.of());
+    }
+
+    private StoryMemoryService.MemoryContext memoryContext() {
+        return new StoryMemoryService.MemoryContext(
+            List.of(Map.of("id", "tl-1", "event", "Ming sealed the gate")),
+            List.of(Map.of("name", "Ming")),
+            List.of(Map.of("subject", "Blood seals")),
+            List.of(Map.of("id", "fs-1", "status", "planted")),
+            List.of()
+        );
     }
 
     private AiOutlineOptionsGenerateResponse generated(String chapterId, String groupId) {

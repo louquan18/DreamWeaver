@@ -50,6 +50,39 @@
   opacity: 0.55;
 }
 
+.outline-generate-intent {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.outline-generate-intent span {
+  color: #d9e5f6;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.outline-generate-intent textarea {
+  min-height: 78px;
+  resize: vertical;
+  border: 1px solid #30394d;
+  border-radius: 6px;
+  background: #101622;
+  color: #edf2f8;
+  line-height: 1.45;
+  padding: 10px 11px;
+}
+
+.outline-generate-intent textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.outline-generate-intent textarea:focus {
+  border-color: #78a4ff;
+  outline: none;
+}
+
 .outline-empty {
   border: 1px dashed #3a4358;
   border-radius: 8px;

@@ -17,11 +17,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dreamweaver.dto.AiMemoryExtractionRequest;
 import com.dreamweaver.dto.AiMemoryExtractionResponse;
+import com.dreamweaver.dto.AiAdditionalMemoryIndexRequest;
 import com.dreamweaver.dto.MemoryChangeSetConfirmRequest;
 import com.dreamweaver.dto.MemoryChangeSetExtractRequest;
 import com.dreamweaver.dto.MemoryChangeSetUpdateRequest;
 import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.ChapterGeneration;
+import com.dreamweaver.entity.ChapterMemorySummary;
 import com.dreamweaver.entity.ChapterStatus;
 import com.dreamweaver.entity.ChapterWorkflowStage;
 import com.dreamweaver.entity.MemoryChangeSet;
@@ -45,17 +47,26 @@ public class MemoryChangeSetService {
     private final ChapterService chapterService;
     private final ChapterGenerationRepository generationRepository;
     private final AiMemoryClient aiMemoryClient;
+    private final StoryMemoryService storyMemoryService;
+    private final ChapterMemorySummaryService chapterMemorySummaryService;
+    private final AiMemoryRetrievalClient aiMemoryRetrievalClient;
 
     public MemoryChangeSetService(
         MemoryChangeSetRepository changeSetRepository,
         ChapterService chapterService,
         ChapterGenerationRepository generationRepository,
-        AiMemoryClient aiMemoryClient
+        AiMemoryClient aiMemoryClient,
+        StoryMemoryService storyMemoryService,
+        ChapterMemorySummaryService chapterMemorySummaryService,
+        AiMemoryRetrievalClient aiMemoryRetrievalClient
     ) {
         this.changeSetRepository = changeSetRepository;
         this.chapterService = chapterService;
         this.generationRepository = generationRepository;
         this.aiMemoryClient = aiMemoryClient;
+        this.storyMemoryService = storyMemoryService;
+        this.chapterMemorySummaryService = chapterMemorySummaryService;
+        this.aiMemoryRetrievalClient = aiMemoryRetrievalClient;
     }
 
     @Transactional
@@ -139,13 +150,40 @@ public class MemoryChangeSetService {
         assertPending(changeSet, "confirmed");
 
         Chapter chapter = chapterService.get(storyId, chapterId);
+        Map<String, Object> applyResult = storyMemoryService.applyChangeSet(changeSet, chapter);
         changeSet.setStatus(MemoryChangeSetStatus.CONFIRMED);
         changeSet.setConfirmedAt(OffsetDateTime.now());
         changeSet.setConfirmedBy(userId(request == null ? null : request.userId()));
+        changeSet.setApplyResult(applyResult);
+        chapterMemorySummaryService.saveFromChangeSet(changeSet, chapter)
+            .ifPresent(summary -> indexConfirmedChapterMemory(summary, chapter));
 
         chapter.setWorkflowStage(ChapterWorkflowStage.MEMORY_CONFIRMED);
         chapterService.save(chapter);
         return changeSetRepository.save(changeSet);
+    }
+
+    private void indexConfirmedChapterMemory(ChapterMemorySummary summary, Chapter chapter) {
+        try {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("chapterId", summary.getChapterId().toString());
+            metadata.put("sourceDraftHash", summary.getSourceDraftHash());
+            putIfPresent(metadata, "sourceGenerationId", stringOrNull(summary.getSourceGenerationId()));
+            putIfPresent(metadata, "extractorVersion", summary.getExtractorVersion());
+
+            aiMemoryRetrievalClient.indexChapter(
+                summary.getStoryId(),
+                new AiAdditionalMemoryIndexRequest(
+                    summary.getChapterNumber(),
+                    summary.getTitle(),
+                    summary.getSummary(),
+                    chapter.getContent(),
+                    metadata
+                )
+            );
+        } catch (RuntimeException ignored) {
+            // Vector indexing is an optional retrieval enhancement and must not block memory confirmation.
+        }
     }
 
     @Transactional
@@ -176,7 +214,9 @@ public class MemoryChangeSetService {
             chapter.setConfirmedAt(now);
         }
 
-        changeSet.setApplyResult(applyResult(changeSet, now));
+        if (changeSet.getApplyResult() == null || changeSet.getApplyResult().isEmpty()) {
+            changeSet.setApplyResult(storyMemoryService.applyChangeSet(changeSet, chapter));
+        }
         Chapter savedChapter = chapterService.save(chapter);
         MemoryChangeSet savedChangeSet = changeSetRepository.save(changeSet);
         return new FreezeResult(savedChapter, savedChangeSet);
@@ -222,7 +262,7 @@ public class MemoryChangeSetService {
         applyGroupedChanges(changeSet, response.changes());
         changeSet.setConflicts(conflicts(response));
         changeSet.setSourceDraftHash(sha256(confirmedDraft));
-        changeSet.setBaseMemoryFingerprint(baseMemoryFingerprint());
+        changeSet.setBaseMemoryFingerprint(storyMemoryService.baseMemoryFingerprint(storyId));
         changeSet.setExtractionMetadata(extractionMetadata(response, generation, request));
 
         MemoryChangeSet saved = changeSetRepository.save(changeSet);
@@ -251,7 +291,7 @@ public class MemoryChangeSetService {
             mapValue(writingContext.get("blueprint")),
             mapValue(writingContext.get("confirmedOutline")),
             listOfMaps(writingContext.get("recentChapters")),
-            Map.of(),
+            storyMemoryService.buildExistingMemory(storyId),
             generationMetadata(generation, request),
             nullToEmpty(generation.getReviewReport()),
             nullToEmpty(generation.getConsistencyReport()),
@@ -343,25 +383,6 @@ public class MemoryChangeSetService {
         return conflicts;
     }
 
-    private Map<String, Object> applyResult(MemoryChangeSet changeSet, OffsetDateTime appliedAt) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("status", "applied");
-        result.put("appliedAt", appliedAt.toString());
-        result.put("chapterId", changeSet.getChapterId().toString());
-        result.put("sourceGenerationId", changeSet.getSourceGenerationId().toString());
-        result.put("counts", Map.of(
-            "timeline", changeSet.getTimelineChanges().size(),
-            "character", changeSet.getCharacterChanges().size(),
-            "world", changeSet.getWorldChanges().size(),
-            "foreshadow", changeSet.getForeshadowChanges().size()
-        ));
-        result.put(
-            "note",
-            "current version records confirmed memory changes for later long-term memory application"
-        );
-        return result;
-    }
-
     private Map<String, Object> extractionMetadata(
         AiMemoryExtractionResponse response,
         ChapterGeneration generation,
@@ -392,14 +413,6 @@ public class MemoryChangeSetService {
         metadata.put("executionHistory", generation.getExecutionHistory());
         metadata.put("options", request == null || request.options() == null ? Map.of() : request.options());
         return metadata;
-    }
-
-    private Map<String, Object> baseMemoryFingerprint() {
-        Map<String, Object> fingerprint = new LinkedHashMap<>();
-        fingerprint.put("algorithm", "sha-256");
-        fingerprint.put("existingMemoryHash", sha256("{}"));
-        fingerprint.put("existingMemory", Map.of());
-        return fingerprint;
     }
 
     private MemoryChangeSet getForUpdate(UUID storyId, UUID chapterId, UUID changeSetId) {
@@ -484,6 +497,16 @@ public class MemoryChangeSetService {
             return HexFormat.of().formatHex(bytes);
         } catch (Exception ex) {
             throw new IllegalStateException(ex);
+        }
+    }
+
+    private String stringOrNull(UUID value) {
+        return value == null ? null : value.toString();
+    }
+
+    private void putIfPresent(Map<String, Object> target, String key, Object value) {
+        if (value != null && !value.toString().isBlank()) {
+            target.put(key, value);
         }
     }
 }

@@ -1,5 +1,4 @@
 import json
-from types import SimpleNamespace
 
 import pytest
 
@@ -12,9 +11,9 @@ class FakeLLM:
         self.content = content
         self.messages = None
 
-    async def ainvoke(self, messages):
+    async def __call__(self, messages):
         self.messages = messages
-        return SimpleNamespace(content=self.content)
+        return self.content
 
 
 def _valid_option(code: str, option_type: str):
@@ -140,6 +139,56 @@ async def test_generate_outline_options_with_fake_llm():
 
 
 @pytest.mark.asyncio
+async def test_generate_outline_options_uses_streaming_model_chain_by_default(monkeypatch):
+    captured = {}
+    raw_json = json.dumps(_valid_payload(), ensure_ascii=False)
+
+    def fake_agent_model_chain(agent_type):
+        captured["agent_type"] = agent_type
+        return ["outline-model"]
+
+    def fake_agent_temperature(agent_type):
+        captured["temperature_agent_type"] = agent_type
+        return 0.5
+
+    async def fake_llm_stream_with_fallback(messages, models, max_tokens, temperature):
+        captured["messages"] = messages
+        captured["models"] = models
+        captured["max_tokens"] = max_tokens
+        captured["temperature"] = temperature
+        yield raw_json
+
+    monkeypatch.setattr(
+        "src.services.outline_service.agent_model_chain",
+        fake_agent_model_chain,
+    )
+    monkeypatch.setattr(
+        "src.services.outline_service.agent_temperature",
+        fake_agent_temperature,
+    )
+    monkeypatch.setattr(
+        "src.services.outline_service.llm_stream_with_fallback",
+        fake_llm_stream_with_fallback,
+    )
+
+    result = await generate_outline_options(
+        story_id="story-1",
+        chapter_id="chapter-2",
+        option_group_id="group-1",
+        foreshadows=[{"id": "fs-1", "summary": "The token carries a dream-fire mark."}],
+    )
+
+    assert [option.option_code for option in result.options] == ["A", "B", "C"]
+    assert captured["agent_type"] == "outline"
+    assert captured["temperature_agent_type"] == "outline"
+    assert captured["models"] == ["outline-model"]
+    assert captured["max_tokens"] == 8192
+    assert captured["temperature"] == 0.5
+    assert captured["messages"][0]["role"] == "system"
+    assert captured["messages"][1]["role"] == "user"
+
+
+@pytest.mark.asyncio
 async def test_generate_outline_options_rejects_invalid_json():
     with pytest.raises(OutlineGenerationError, match="valid JSON"):
         await generate_outline_options(
@@ -234,7 +283,7 @@ async def test_generate_outline_options_builds_context_and_llm_messages():
 
     assert fake_llm.messages is not None
     assert len(fake_llm.messages) == 2
-    human_message = fake_llm.messages[1].content
+    human_message = fake_llm.messages[1]["content"]
     assert '"storyId": "story-1"' in human_message
     assert '"chapterId": "chapter-2"' in human_message
     assert '"optionGroupId": "group-1"' in human_message
@@ -256,7 +305,7 @@ async def test_generate_outline_options_accepts_prebuilt_context():
     await generate_outline_options(context=context, llm=fake_llm)
 
     assert fake_llm.messages is not None
-    assert "A betrayed disciple uses dream visions." in fake_llm.messages[1].content
+    assert "A betrayed disciple uses dream visions." in fake_llm.messages[1]["content"]
 
 
 @pytest.mark.asyncio

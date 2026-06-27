@@ -42,6 +42,21 @@ class Settings(BaseSettings):
     # ── 各 Agent 模型路由（混合策略，全部可用环境变量覆盖）──
     # 主模型 + 失败时的 fallback 备用模型；slug 以 https://openrouter.ai/models 为准
     # 规划/写作/评审/重写：质量优先；一致性/上下文抽取：低成本
+    # Stage-level LLM routing. Empty values fall back to the legacy agent-level keys below.
+    model_blueprint: str = ""
+    model_blueprint_fallback: str = ""
+    model_outline: str = ""
+    model_outline_fallback: str = ""
+    model_draft: str = ""
+    model_draft_fallback: str = ""
+    model_review: str = ""
+    model_review_fallback: str = ""
+    model_repair: str = ""
+    model_repair_fallback: str = ""
+    model_memory_extract: str = ""
+    model_memory_extract_fallback: str = ""
+
+    # Legacy agent-level LLM routing. Kept for backwards-compatible .env files.
     model_planner: str = "anthropic/claude-3.5-sonnet"
     model_planner_fallback: str = "openai/gpt-4o"
     model_writer: str = "anthropic/claude-3.5-sonnet"

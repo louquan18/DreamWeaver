@@ -6,8 +6,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from src.schemas.outline import ChapterOutlineOptionsDraft
 
 OUTLINE_OPTIONS_SYSTEM_PROMPT = """你是 DreamWeaver 的章节中纲策划 Agent。你的任务是为同一章生成 A/B/C 三个可供作者选择的中纲方案。
@@ -73,6 +71,15 @@ OUTLINE_OPTIONS_HUMAN_PROMPT = """请基于以下上下文，为目标章节生�
 请严格返回 ChapterOutlineOptionsDraft JSON。"""
 
 
+RECENT_CHAPTER_COMPRESSION_RULES = """
+
+Recent chapter compression rules:
+- contextRole="recent_full_text" entries may include content and should drive immediate continuity.
+- contextRole="recent_summary" entries are compressed memory; use summary as factual background only.
+- Do not invent events for missing older chapter summaries, and only reference fields present in the input.
+- additionalMemory is supplemental retrieval material for remote details only; it must not override confirmed blueprint facts, official structured memory, or explicit chapter intent."""
+
+
 @dataclass(frozen=True)
 class OutlineOptionsPromptContext:
     """Inputs needed to build a chapter outline options prompt."""
@@ -93,7 +100,7 @@ class OutlineOptionsPromptContext:
 
 def build_outline_options_prompt(
     context: OutlineOptionsPromptContext,
-) -> list[SystemMessage | HumanMessage]:
+) -> list[dict[str, str]]:
     """Build messages for generating P3 A/B/C chapter outline options."""
     metadata = {
         "storyId": context.story_id,
@@ -108,9 +115,13 @@ def build_outline_options_prompt(
     }
 
     return [
-        SystemMessage(content=OUTLINE_OPTIONS_SYSTEM_PROMPT.format(schema=_json(_schema()))),
-        HumanMessage(
-            content=OUTLINE_OPTIONS_HUMAN_PROMPT.format(
+        {
+            "role": "system",
+            "content": OUTLINE_OPTIONS_SYSTEM_PROMPT.format(schema=_json(_schema())),
+        },
+        {
+            "role": "user",
+            "content": OUTLINE_OPTIONS_HUMAN_PROMPT.format(
                 metadata=_json(metadata),
                 blueprint=_json(context.blueprint),
                 chapter_intent=_json(context.chapter_intent),
@@ -121,7 +132,8 @@ def build_outline_options_prompt(
                 existing_foreshadows=_json(context.existing_foreshadows),
                 additional_memory=_json(context.additional_memory),
             )
-        ),
+            + RECENT_CHAPTER_COMPRESSION_RULES,
+        },
     ]
 
 

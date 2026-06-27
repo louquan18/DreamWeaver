@@ -215,6 +215,12 @@ public class ChapterGenerationController {
         payload.put("blueprint", writingContext.getOrDefault("blueprint", Map.of()));
         payload.put("confirmedOutline", writingContext.getOrDefault("confirmedOutline", Map.of()));
         payload.put("recentChapters", writingContext.getOrDefault("recentChapters", List.of()));
+        payload.put("timeline", writingContext.getOrDefault("timeline", List.of()));
+        payload.put("characters", writingContext.getOrDefault("characters", List.of()));
+        payload.put("world", writingContext.getOrDefault("world", List.of()));
+        payload.put("foreshadows", writingContext.getOrDefault("foreshadows", List.of()));
+        payload.put("additionalMemory", writingContext.getOrDefault("additionalMemory", List.of()));
+        payload.put("contextMetadata", writingContext.getOrDefault("contextMetadata", Map.of()));
         payload.put("extraPrompt", request.get("extra_prompt"));
         payload.put("targetWords", request.get("target_words"));
         payload.put("modelProfile", request.get("model_profile"));

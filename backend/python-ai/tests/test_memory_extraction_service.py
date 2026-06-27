@@ -78,6 +78,26 @@ def test_parse_memory_extraction_response_accepts_fenced_json_object():
     assert result.summary == "One timeline memory was extracted."
 
 
+def test_parse_memory_extraction_response_accepts_uppercase_fenced_json_object():
+    raw_response = "```JSON\n" + json.dumps(valid_memory_result_payload()) + "\n```"
+
+    result = parse_memory_extraction_response(raw_response)
+
+    assert result.status == "extracted"
+
+
+def test_parse_memory_extraction_response_extracts_json_object_from_preface():
+    raw_response = (
+        "Here is the MemoryExtractionResult JSON:\n"
+        + json.dumps(valid_memory_result_payload())
+        + "\nDone."
+    )
+
+    result = parse_memory_extraction_response(raw_response)
+
+    assert result.summary == "One timeline memory was extracted."
+
+
 @pytest.mark.parametrize("raw_response", ["", "   ", "```json\n\n```"])
 def test_parse_memory_extraction_response_rejects_empty_llm_response(raw_response: str):
     with pytest.raises(MemoryExtractionGenerationError) as exc_info:
@@ -117,7 +137,7 @@ async def test_extract_memory_from_confirmed_draft_returns_valid_result_from_llm
 
     def fake_agent_model_chain(agent_type):
         captured["agent_type"] = agent_type
-        return ["reviewer-model"]
+        return ["memory-extract-model"]
 
     def fake_agent_temperature(agent_type):
         captured["temperature_agent_type"] = agent_type
@@ -149,10 +169,10 @@ async def test_extract_memory_from_confirmed_draft_returns_valid_result_from_llm
 
     assert isinstance(result, MemoryExtractionResult)
     assert result.summary == "One timeline memory was extracted."
-    assert captured["agent_type"] == "reviewer"
-    assert captured["temperature_agent_type"] == "reviewer"
-    assert captured["models"] == ["reviewer-model"]
-    assert captured["max_tokens"] == 4096
+    assert captured["agent_type"] == "memory_extract"
+    assert captured["temperature_agent_type"] == "memory_extract"
+    assert captured["models"] == ["memory-extract-model"]
+    assert captured["max_tokens"] == 8192
     assert captured["temperature"] == 0.3
     prompt = "\n".join(message["content"] for message in captured["messages"])
     assert "Lin Jin confirmed the mirror name in the market." in prompt
@@ -174,6 +194,31 @@ async def test_extract_memory_from_confirmed_draft_rejects_empty_llm_stream(monk
         await extract_memory_from_confirmed_draft(memory_extraction_request_payload())
 
     assert exc_info.value.code == "EMPTY_MEMORY_EXTRACTION_RESPONSE"
+
+
+@pytest.mark.asyncio
+async def test_extract_memory_from_confirmed_draft_retries_truncated_json_with_larger_budget(
+    monkeypatch,
+):
+    calls = []
+    valid_response = json.dumps(valid_memory_result_payload(), ensure_ascii=False)
+
+    async def fake_llm_stream_with_fallback(messages, models, max_tokens, temperature):
+        calls.append(max_tokens)
+        if len(calls) == 1:
+            yield '{"storyId":"story-1","chapterId":"chapter-1","summary":"truncated'
+            return
+        yield valid_response
+
+    monkeypatch.setattr(
+        "src.services.memory_extraction_service.llm_stream_with_fallback",
+        fake_llm_stream_with_fallback,
+    )
+
+    result = await extract_memory_from_confirmed_draft(memory_extraction_request_payload())
+
+    assert result.status == "extracted"
+    assert calls == [8192, 12288]
 
 
 @pytest.mark.asyncio

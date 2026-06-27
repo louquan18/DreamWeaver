@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -45,11 +46,18 @@ class ChapterOutlineOptionControllerTests {
     private ChapterOutlineOptionService optionService;
 
     @Test
-    void listReturnsOutlineOptionsForChapter() throws Exception {
-        when(optionRepository.findByStoryIdAndChapterIdOrderByCreatedAtDesc(STORY_ID, CHAPTER_ID))
+    void listReturnsLatestOutlineOptionGroupForChapter() throws Exception {
+        ChapterOutlineOption latest = option(OPTION_B_ID, OutlineOptionCode.B, OutlineOptionType.CONFLICT);
+        when(optionRepository.findFirstByStoryIdAndChapterIdOrderByCreatedAtDesc(STORY_ID, CHAPTER_ID))
+            .thenReturn(Optional.of(latest));
+        when(optionRepository.findByStoryIdAndChapterIdAndOptionGroupIdOrderByOptionCodeAsc(
+            STORY_ID,
+            CHAPTER_ID,
+            GROUP_ID
+        ))
             .thenReturn(List.of(
                 option(OPTION_A_ID, OutlineOptionCode.A, OutlineOptionType.STEADY),
-                option(OPTION_B_ID, OutlineOptionCode.B, OutlineOptionType.CONFLICT)
+                latest
             ));
 
         mockMvc.perform(get(

@@ -94,6 +94,8 @@ async def test_internal_draft_stream_route_passes_java_confirmed_context(monkeyp
     assert captured["payload"]["confirmedOutline"]["finalOutline"]["endingHook"] == (
         "The mirror speaks."
     )
+    assert captured["payload"]["characters"][0]["name"] == "Lin Jin"
+    assert captured["payload"]["foreshadows"][0]["status"] == "triggered"
 
 
 @pytest.mark.asyncio
@@ -173,6 +175,32 @@ def test_validate_generate_draft_request_returns_task_schema():
     assert request.writer_payload()["confirmedOutline"]["finalOutline"]["endingHook"] == (
         "The mirror speaks."
     )
+    assert request.writer_payload()["timeline"][0]["event"] == "Lin Jin escaped the outer sect."
+    assert request.writer_payload()["characters"][0]["name"] == "Lin Jin"
+    assert request.writer_payload()["contextMetadata"]["policy"] == "structured-memory-v1"
+
+
+def test_validate_generate_draft_request_defaults_structured_memory_fields():
+    payload = draft_request_payload()
+    for field in (
+        "timeline",
+        "characters",
+        "world",
+        "foreshadows",
+        "additionalMemory",
+        "contextMetadata",
+    ):
+        payload.pop(field)
+
+    request = validate_generate_draft_request(payload)
+    payload = request.writer_payload()
+
+    assert payload["timeline"] == []
+    assert payload["characters"] == []
+    assert payload["world"] == []
+    assert payload["foreshadows"] == []
+    assert payload["additionalMemory"] == []
+    assert payload["contextMetadata"] == {}
 
 
 def test_confirmed_outline_draft_prompt_contains_blueprint_and_outline():
@@ -187,6 +215,21 @@ def test_confirmed_outline_draft_prompt_contains_blueprint_and_outline():
     assert "The token burns near a mirror stall." in prompt
     assert "The mirror speaks." in prompt
     assert "Keep the ending quiet and ominous." in prompt
+    assert "[structuredTimeline]" in prompt
+    assert "Lin Jin escaped the outer sect." in prompt
+    assert "[characterStates]" in prompt
+    assert "injured but carrying the dream token" in prompt
+    assert "[worldFacts]" in prompt
+    assert "Mirror fire cannot cross locked gates." in prompt
+    assert "[openForeshadows]" in prompt
+    assert "The mirror token is burning." in prompt
+    assert "confirmedOutline > blueprint.lockedFacts > structured memory" in prompt
+    assert "If recentChapters conflict with structured memory" in prompt
+    assert "additionalMemory is supplemental retrieval material" in prompt
+    assert "must not override confirmedOutline" in prompt
+    assert "Recent chapter compression rules" in prompt
+    assert 'contextRole="recent_full_text"' in prompt
+    assert 'contextRole="recent_summary"' in prompt
 
 
 def test_confirmed_outline_draft_prompt_defaults_to_about_2000_words():
@@ -217,7 +260,7 @@ async def test_confirmed_outline_draft_stream_uses_writer_model_not_planner(monk
 
     def fake_agent_model_chain(agent_type):
         captured["agent_type"] = agent_type
-        return ["writer-model"]
+        return ["draft-model"]
 
     def fake_agent_temperature(agent_type):
         captured["temperature_agent_type"] = agent_type
@@ -240,9 +283,9 @@ async def test_confirmed_outline_draft_stream_uses_writer_model_not_planner(monk
     tokens = [token async for token in stream_confirmed_outline_draft(draft_request_payload())]
 
     assert tokens == ["正文"]
-    assert captured["agent_type"] == "writer"
-    assert captured["temperature_agent_type"] == "writer"
-    assert captured["models"] == ["writer-model"]
+    assert captured["agent_type"] == "draft"
+    assert captured["temperature_agent_type"] == "draft"
+    assert captured["models"] == ["draft-model"]
     assert captured["max_tokens"] >= 4096
     prompt = "\n".join(message["content"] for message in captured["messages"])
     assert "不得调用或模拟 Planner" in prompt
@@ -350,6 +393,45 @@ def draft_request_payload():
                 "content": "Lin Jin escaped the outer sect with the dream token.",
             }
         ],
+        "timeline": [
+            {
+                "id": "tl-1",
+                "event": "Lin Jin escaped the outer sect.",
+                "importance": "high",
+            }
+        ],
+        "characters": [
+            {
+                "name": "Lin Jin",
+                "state": "injured but carrying the dream token",
+                "location": "mirror market",
+            }
+        ],
+        "world": [
+            {
+                "subject": "Mirror fire",
+                "description": "Mirror fire cannot cross locked gates.",
+                "locked": True,
+            }
+        ],
+        "foreshadows": [
+            {
+                "id": "fs-1",
+                "status": "triggered",
+                "content": "The mirror token is burning.",
+                "needsAttention": True,
+            }
+        ],
+        "additionalMemory": [],
+        "contextMetadata": {
+            "policy": "structured-memory-v1",
+            "limits": {
+                "timeline": 20,
+                "characters": 12,
+                "world": 20,
+                "foreshadows": 10,
+            },
+        },
         "extraPrompt": "Keep the ending quiet and ominous.",
         "targetWords": 1800,
         "modelProfile": "writing",

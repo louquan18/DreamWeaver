@@ -11,33 +11,88 @@ from loguru import logger
 
 from src.core.config import settings
 
+
+def _first_configured(*values: str) -> str:
+    for value in values:
+        if value and value.strip():
+            return value
+    return ""
+
 # 各 Agent 的主模型 / fallback 备用模型（取自配置，env 可覆盖）
 _AGENT_PRIMARY = {
-    "blueprint": lambda: settings.model_planner,
-    "planner": lambda: settings.model_planner,
-    "writer": lambda: settings.model_writer,
+    "blueprint": lambda: _first_configured(settings.model_blueprint, settings.model_planner),
+    "outline": lambda: _first_configured(settings.model_outline, settings.model_planner),
+    "planner": lambda: _first_configured(settings.model_outline, settings.model_planner),
+    "draft": lambda: _first_configured(settings.model_draft, settings.model_writer),
+    "writer": lambda: _first_configured(settings.model_draft, settings.model_writer),
     "consistency": lambda: settings.model_consistency,
-    "reviewer": lambda: settings.model_reviewer,
-    "rewrite": lambda: settings.model_rewrite,
+    "review": lambda: _first_configured(settings.model_review, settings.model_reviewer),
+    "reviewer": lambda: _first_configured(settings.model_review, settings.model_reviewer),
+    "repair": lambda: _first_configured(settings.model_repair, settings.model_rewrite),
+    "rewrite": lambda: _first_configured(settings.model_repair, settings.model_rewrite),
+    "memory_extract": lambda: _first_configured(
+        settings.model_memory_extract,
+        settings.model_reviewer,
+    ),
     "context": lambda: settings.model_context,
 }
 _AGENT_FALLBACK = {
-    "blueprint": lambda: settings.model_planner_fallback,
-    "planner": lambda: settings.model_planner_fallback,
-    "writer": lambda: settings.model_writer_fallback,
+    "blueprint": lambda: _first_configured(
+        settings.model_blueprint_fallback,
+        settings.model_planner_fallback,
+    ),
+    "outline": lambda: _first_configured(
+        settings.model_outline_fallback,
+        settings.model_planner_fallback,
+    ),
+    "planner": lambda: _first_configured(
+        settings.model_outline_fallback,
+        settings.model_planner_fallback,
+    ),
+    "draft": lambda: _first_configured(
+        settings.model_draft_fallback,
+        settings.model_writer_fallback,
+    ),
+    "writer": lambda: _first_configured(
+        settings.model_draft_fallback,
+        settings.model_writer_fallback,
+    ),
     "consistency": lambda: settings.model_consistency_fallback,
-    "reviewer": lambda: settings.model_reviewer_fallback,
-    "rewrite": lambda: settings.model_rewrite_fallback,
+    "review": lambda: _first_configured(
+        settings.model_review_fallback,
+        settings.model_reviewer_fallback,
+    ),
+    "reviewer": lambda: _first_configured(
+        settings.model_review_fallback,
+        settings.model_reviewer_fallback,
+    ),
+    "repair": lambda: _first_configured(
+        settings.model_repair_fallback,
+        settings.model_rewrite_fallback,
+    ),
+    "rewrite": lambda: _first_configured(
+        settings.model_repair_fallback,
+        settings.model_rewrite_fallback,
+    ),
+    "memory_extract": lambda: _first_configured(
+        settings.model_memory_extract_fallback,
+        settings.model_reviewer_fallback,
+    ),
     "context": lambda: settings.model_context_fallback,
 }
 # 不同任务使用不同温度
 _AGENT_TEMPERATURE = {
     "blueprint": 0.4,
+    "outline": 0.5,
     "planner": 0.5,
+    "draft": 0.8,
     "writer": 0.8,
     "consistency": 0.1,
+    "review": 0.3,
     "reviewer": 0.3,
+    "repair": 0.7,
     "rewrite": 0.7,
+    "memory_extract": 0.1,
     "context": 0.1,
 }
 
@@ -54,7 +109,10 @@ def openrouter_headers() -> dict[str, str]:
 
 def agent_model_chain(agent_type: str) -> list[str]:
     """返回某 Agent 的模型调用链 [主模型, 备用模型?]（去空、去重）"""
-    primary = _AGENT_PRIMARY.get(agent_type, lambda: settings.model_writer)()
+    primary = _AGENT_PRIMARY.get(
+        agent_type,
+        lambda: _first_configured(settings.model_draft, settings.model_writer),
+    )()
     fallback = _AGENT_FALLBACK.get(agent_type, lambda: "")()
     chain = [primary]
     if fallback and fallback != primary:
@@ -86,7 +144,7 @@ def get_llm(
 ) -> ChatOpenAI:
     """获取一个 LLM 实例（不带 fallback），默认使用 writer 模型"""
     return ChatOpenAI(
-        model=model or settings.model_writer,
+        model=model or _first_configured(settings.model_draft, settings.model_writer),
         openai_api_key=settings.llm_api_key,
         openai_api_base=settings.llm_base_url,
         temperature=temperature,

@@ -41,7 +41,13 @@ public class ChapterOutlineOptionController {
         @RequestParam(required = false) UUID groupId
     ) {
         List<ChapterOutlineOption> options = groupId == null
-            ? optionRepository.findByStoryIdAndChapterIdOrderByCreatedAtDesc(storyId, chapterId)
+            ? optionRepository.findFirstByStoryIdAndChapterIdOrderByCreatedAtDesc(storyId, chapterId)
+                .map(latest -> optionRepository.findByStoryIdAndChapterIdAndOptionGroupIdOrderByOptionCodeAsc(
+                    storyId,
+                    chapterId,
+                    latest.getOptionGroupId()
+                ))
+                .orElse(List.of())
             : optionRepository.findByStoryIdAndChapterIdAndOptionGroupIdOrderByOptionCodeAsc(
                 storyId,
                 chapterId,

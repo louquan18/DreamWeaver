@@ -1,5 +1,4 @@
 import json
-from types import SimpleNamespace
 
 import pytest
 
@@ -13,9 +12,9 @@ class FakeLLM:
         self.content = content
         self.messages = None
 
-    async def ainvoke(self, messages):
+    async def __call__(self, messages):
         self.messages = messages
-        return SimpleNamespace(content=self.content)
+        return self.content
 
 
 def _valid_payload():
@@ -71,6 +70,52 @@ async def test_generate_light_blueprint_with_fake_llm():
     assert blueprint.writing_preferences["targetWords"] == 300000
     assert blueprint.locked_facts[0]["text"] == "梦境预知不能保证完全准确"
     assert fake_llm.messages is not None
+
+
+@pytest.mark.asyncio
+async def test_generate_light_blueprint_uses_streaming_model_chain_by_default(monkeypatch):
+    captured = {}
+    raw_json = json.dumps(_valid_payload(), ensure_ascii=False)
+
+    def fake_agent_model_chain(agent_type):
+        captured["agent_type"] = agent_type
+        return ["blueprint-model"]
+
+    def fake_agent_temperature(agent_type):
+        captured["temperature_agent_type"] = agent_type
+        return 0.4
+
+    async def fake_llm_stream_with_fallback(messages, models, max_tokens, temperature):
+        captured["messages"] = messages
+        captured["models"] = models
+        captured["max_tokens"] = max_tokens
+        captured["temperature"] = temperature
+        yield raw_json
+
+    monkeypatch.setattr(
+        "src.services.blueprint_service.agent_model_chain",
+        fake_agent_model_chain,
+    )
+    monkeypatch.setattr(
+        "src.services.blueprint_service.agent_temperature",
+        fake_agent_temperature,
+    )
+    monkeypatch.setattr(
+        "src.services.blueprint_service.llm_stream_with_fallback",
+        fake_llm_stream_with_fallback,
+    )
+
+    request = LightBlueprintGenerateRequest(source_prompt="A betrayed disciple seeks revenge")
+    blueprint = await generate_light_blueprint("story-1", request)
+
+    assert blueprint.status == "generated"
+    assert captured["agent_type"] == "blueprint"
+    assert captured["temperature_agent_type"] == "blueprint"
+    assert captured["models"] == ["blueprint-model"]
+    assert captured["max_tokens"] == 8192
+    assert captured["temperature"] == 0.4
+    assert captured["messages"][0]["role"] == "system"
+    assert captured["messages"][1]["role"] == "user"
 
 
 @pytest.mark.asyncio

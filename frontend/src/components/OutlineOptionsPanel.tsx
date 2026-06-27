@@ -50,6 +50,7 @@ export function OutlineOptionsPanel({
   const [notice, setNotice] = useState('')
   const [primaryOptionId, setPrimaryOptionId] = useState('')
   const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([])
+  const [generateIntent, setGenerateIntent] = useState('')
   const [userFeedback, setUserFeedback] = useState('')
   const [detailsOpen, setDetailsOpen] = useState(false)
 
@@ -134,7 +135,9 @@ export function OutlineOptionsPanel({
     setError('')
     setNotice('')
     try {
-      const result = await generateChapterOutlineOptions(storyId, chapterId)
+      const result = await generateChapterOutlineOptions(storyId, chapterId, {
+        authorIntent: buildOutlineGenerationIntent(generateIntent),
+      })
       const sorted = sortOptions(result.options)
       const firstId = sorted.find((option) => Boolean(option.id))?.id || ''
       setOptions(sorted)
@@ -213,6 +216,20 @@ export function OutlineOptionsPanel({
           </button>
         </div>
       </div>
+
+      {!outlineConfirmed && (
+        <label className="outline-generate-intent">
+          <span>Generation direction</span>
+          <textarea
+            value={generateIntent}
+            onChange={(event) => setGenerateIntent(event.target.value)}
+            rows={3}
+            maxLength={1200}
+            placeholder="Optional: push the chapter toward a darker confrontation, a slower reveal, or a stronger foreshadow payoff."
+            disabled={!canLoad || busy}
+          />
+        </label>
+      )}
 
       {!canLoad && (
         <div className="outline-empty">
@@ -566,6 +583,44 @@ function isOutlineConfirmedStage(stage: string) {
     'memory_confirmed',
     'chapter_confirmed',
   ].includes(stage)
+}
+
+function buildOutlineGenerationIntent(direction: string): Record<string, unknown> {
+  const cleanedDirection = direction.trim()
+  const variationSeed = createVariationSeed()
+  return {
+    direction: cleanedDirection || undefined,
+    variationSeed,
+    variationGoal: pickVariationGoal(variationSeed),
+    requestedAt: new Date().toISOString(),
+  }
+}
+
+function createVariationSeed() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function pickVariationGoal(seed: string) {
+  const goals = [
+    'steady continuity with one fresh scene angle',
+    'higher immediate pressure without breaking locked facts',
+    'stronger foreshadow setup or payoff tied to existing memory',
+    'clearer character choice and consequence',
+  ]
+  const index = Math.abs(hashText(seed)) % goals.length
+  return goals[index]
+}
+
+function hashText(value: string) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index)
+    hash |= 0
+  }
+  return hash
 }
 
 function buildFinalOutline(option: ChapterOutlineOption): Record<string, unknown> {

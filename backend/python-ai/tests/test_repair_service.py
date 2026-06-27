@@ -99,12 +99,12 @@ def test_parse_repair_result_rejects_invalid_schema():
 
 
 @pytest.mark.asyncio
-async def test_auto_repair_uses_rewrite_model_not_other_agents(monkeypatch):
+async def test_auto_repair_uses_repair_model_not_other_stages(monkeypatch):
     requested_agents = []
 
     def fake_agent_model_chain(agent_type):
         requested_agents.append(agent_type)
-        return ["rewrite-model"]
+        return ["repair-model"]
 
     def fake_agent_temperature(agent_type):
         requested_agents.append(f"temperature:{agent_type}")
@@ -122,10 +122,10 @@ async def test_auto_repair_uses_rewrite_model_not_other_agents(monkeypatch):
 
     await auto_repair_p0(repair_request_payload())
 
-    assert requested_agents == ["rewrite", "temperature:rewrite"]
-    assert "writer" not in requested_agents
-    assert "planner" not in requested_agents
-    assert "reviewer" not in requested_agents
+    assert requested_agents == ["repair", "temperature:repair"]
+    assert "draft" not in requested_agents
+    assert "outline" not in requested_agents
+    assert "review" not in requested_agents
     assert "consistency" not in requested_agents
 
 

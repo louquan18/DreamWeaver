@@ -60,6 +60,9 @@ public class ChapterGenerationService {
     private final NovelBlueprintRepository blueprintRepository;
     private final ChapterOutlineRepository outlineRepository;
     private final ChapterRepository chapterRepository;
+    private final ChapterMemorySummaryService chapterMemorySummaryService;
+    private final StoryMemoryService storyMemoryService;
+    private final AdditionalMemoryRetriever additionalMemoryRetriever;
 
     public ChapterGenerationService(
         ChapterGenerationRepository generationRepository,
@@ -67,7 +70,10 @@ public class ChapterGenerationService {
         StoryRepository storyRepository,
         NovelBlueprintRepository blueprintRepository,
         ChapterOutlineRepository outlineRepository,
-        ChapterRepository chapterRepository
+        ChapterRepository chapterRepository,
+        ChapterMemorySummaryService chapterMemorySummaryService,
+        StoryMemoryService storyMemoryService,
+        AdditionalMemoryRetriever additionalMemoryRetriever
     ) {
         this.generationRepository = generationRepository;
         this.chapterService = chapterService;
@@ -75,6 +81,9 @@ public class ChapterGenerationService {
         this.blueprintRepository = blueprintRepository;
         this.outlineRepository = outlineRepository;
         this.chapterRepository = chapterRepository;
+        this.chapterMemorySummaryService = chapterMemorySummaryService;
+        this.storyMemoryService = storyMemoryService;
+        this.additionalMemoryRetriever = additionalMemoryRetriever;
     }
 
     @Transactional
@@ -228,13 +237,49 @@ public class ChapterGenerationService {
                 "Chapter outline must be confirmed before draft generation: " + chapter.getId()
             ));
 
+        StoryMemoryService.MemoryContext memoryContext = storyMemoryService.buildOutlineMemoryContext(storyId);
+        Map<String, Object> storyContext = storyContext(story);
+        Map<String, Object> chapterContext = chapterContext(chapter);
+        Map<String, Object> blueprintContext = blueprintContext(blueprint);
+        Map<String, Object> outlineContext = outlineContext(outline);
+
         Map<String, Object> context = new HashMap<>();
-        context.put("story", storyContext(story));
-        context.put("chapter", chapterContext(chapter));
-        context.put("blueprint", blueprintContext(blueprint));
-        context.put("confirmedOutline", outlineContext(outline));
+        context.put("story", storyContext);
+        context.put("chapter", chapterContext);
+        context.put("blueprint", blueprintContext);
+        context.put("confirmedOutline", outlineContext);
         context.put("recentChapters", recentChapterContexts(storyId, chapter));
+        context.put("timeline", memoryContext.timeline());
+        context.put("characters", memoryContext.characters());
+        context.put("world", memoryContext.world());
+        context.put("foreshadows", memoryContext.foreshadows());
+        context.put("additionalMemory", additionalMemoryRetriever.retrieve(
+            storyId,
+            storyContext,
+            chapterContext,
+            blueprintContext,
+            outlineContext,
+            Map.of()
+        ));
+        context.put("contextMetadata", contextMetadata());
         return context;
+    }
+
+    private Map<String, Object> contextMetadata() {
+        return Map.of(
+            "version", 1,
+            "policy", "structured-memory-v1",
+            "assembledAt", OffsetDateTime.now().toString(),
+            "limits", Map.of(
+                "recentFullTextChapters", ChapterMemorySummaryService.RECENT_FULL_TEXT_CHAPTERS,
+                "recentSummaryChapters", ChapterMemorySummaryService.RECENT_SUMMARY_CHAPTERS,
+                "timeline", StoryMemoryService.TIMELINE_LIMIT,
+                "characters", StoryMemoryService.CHARACTER_LIMIT,
+                "world", StoryMemoryService.WORLD_LIMIT,
+                "foreshadows", StoryMemoryService.FORESHADOW_LIMIT,
+                "additionalMemory", StoryMemoryService.ADDITIONAL_MEMORY_LIMIT
+            )
+        );
     }
 
     private Map<String, Object> storyContext(Story story) {
@@ -290,25 +335,11 @@ public class ChapterGenerationService {
     }
 
     private List<Map<String, Object>> recentChapterContexts(UUID storyId, Chapter currentChapter) {
-        return chapterRepository.findByStoryIdOrderByChapterNumberAsc(storyId).stream()
-            .filter(chapter -> chapter.getChapterNumber() != null
-                && currentChapter.getChapterNumber() != null
-                && chapter.getChapterNumber() < currentChapter.getChapterNumber())
-            .filter(chapter -> chapter.getContent() != null && !chapter.getContent().isBlank())
-            .sorted((left, right) -> Integer.compare(right.getChapterNumber(), left.getChapterNumber()))
-            .limit(3)
-            .map(this::recentChapterContext)
-            .toList();
-    }
-
-    private Map<String, Object> recentChapterContext(Chapter chapter) {
-        Map<String, Object> values = new HashMap<>();
-        values.put("id", chapter.getId());
-        values.put("chapterNumber", chapter.getChapterNumber());
-        values.put("title", chapter.getTitle());
-        values.put("content", chapter.getContent());
-        values.put("wordCount", chapter.getWordCount());
-        return values;
+        return chapterMemorySummaryService.recentChapterContexts(
+            storyId,
+            currentChapter,
+            chapterRepository.findByStoryIdOrderByChapterNumberAsc(storyId)
+        );
     }
 
     @Transactional

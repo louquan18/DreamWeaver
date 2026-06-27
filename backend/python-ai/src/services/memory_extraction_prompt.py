@@ -143,6 +143,14 @@ Return only MemoryExtractionResult JSON.
 """
 
 
+RECENT_CHAPTER_COMPRESSION_RULES = """
+
+Recent chapter compression rules:
+- contextRole="recent_full_text" entries can provide immediate continuity, but new memory changes still require evidence from confirmedDraft.
+- contextRole="recent_summary" entries are compressed background; use summary only to avoid duplicates or conflicts with existing history.
+- Do not extract or update memory from a recent chapter summary unless confirmedDraft independently supports the change."""
+
+
 @dataclass(frozen=True)
 class MemoryExtractionPromptContext:
     """Inputs for extracting pending memory changes after draft confirmation."""
@@ -179,6 +187,7 @@ def build_memory_extraction_messages(
             "role": "system",
             "content": (
                 MEMORY_EXTRACTION_SYSTEM_PROMPT
+                + RECENT_CHAPTER_COMPRESSION_RULES
                 + "\nMemoryExtractionResult JSON schema:\n"
                 + _json(_schema())
             ),

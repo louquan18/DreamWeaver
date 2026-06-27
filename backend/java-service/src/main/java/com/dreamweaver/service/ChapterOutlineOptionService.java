@@ -27,6 +27,7 @@ import com.dreamweaver.repository.ChapterOutlineOptionRepository;
 import com.dreamweaver.repository.ChapterRepository;
 import com.dreamweaver.repository.NovelBlueprintRepository;
 import com.dreamweaver.repository.StoryRepository;
+import com.dreamweaver.service.StoryMemoryService.MemoryContext;
 
 @Service
 public class ChapterOutlineOptionService {
@@ -43,19 +44,28 @@ public class ChapterOutlineOptionService {
     private final NovelBlueprintRepository blueprintRepository;
     private final ChapterOutlineOptionRepository optionRepository;
     private final AiOutlineClient aiOutlineClient;
+    private final StoryMemoryService storyMemoryService;
+    private final ChapterMemorySummaryService chapterMemorySummaryService;
+    private final AdditionalMemoryRetriever additionalMemoryRetriever;
 
     public ChapterOutlineOptionService(
         StoryRepository storyRepository,
         ChapterRepository chapterRepository,
         NovelBlueprintRepository blueprintRepository,
         ChapterOutlineOptionRepository optionRepository,
-        AiOutlineClient aiOutlineClient
+        AiOutlineClient aiOutlineClient,
+        StoryMemoryService storyMemoryService,
+        ChapterMemorySummaryService chapterMemorySummaryService,
+        AdditionalMemoryRetriever additionalMemoryRetriever
     ) {
         this.storyRepository = storyRepository;
         this.chapterRepository = chapterRepository;
         this.blueprintRepository = blueprintRepository;
         this.optionRepository = optionRepository;
         this.aiOutlineClient = aiOutlineClient;
+        this.storyMemoryService = storyMemoryService;
+        this.chapterMemorySummaryService = chapterMemorySummaryService;
+        this.additionalMemoryRetriever = additionalMemoryRetriever;
     }
 
     @Transactional
@@ -69,22 +79,34 @@ public class ChapterOutlineOptionService {
         assertOutlineOptionsCanBeGenerated(chapter);
         NovelBlueprint blueprint = getConfirmedBlueprint(storyId);
         UUID optionGroupId = UUID.randomUUID();
+        MemoryContext memoryContext = storyMemoryService.buildOutlineMemoryContext(storyId);
+        Map<String, Object> storyContext = storyContext(story);
+        Map<String, Object> chapterContext = chapterContext(chapter);
+        Map<String, Object> blueprintContext = blueprintContext(blueprint);
+        Map<String, Object> authorIntent = request == null ? null : request.authorIntent();
 
         AiOutlineOptionsGenerateResponse generated = aiOutlineClient.generateOutlineOptions(
             storyId,
             chapterId,
             new AiOutlineOptionsGenerateRequest(
                 optionGroupId.toString(),
-                storyContext(story),
-                chapterContext(chapter),
-                blueprintContext(blueprint),
-                request == null ? null : request.authorIntent(),
+                storyContext,
+                chapterContext,
+                blueprintContext,
+                authorIntent,
                 recentChapterContexts(storyId, chapter),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of()
+                memoryContext.timeline(),
+                memoryContext.characters(),
+                memoryContext.world(),
+                memoryContext.foreshadows(),
+                additionalMemoryRetriever.retrieve(
+                    storyId,
+                    storyContext,
+                    chapterContext,
+                    blueprintContext,
+                    Map.of(),
+                    authorIntent
+                )
             )
         );
         validateGeneratedResponse(storyId, chapterId, optionGroupId, generated);
@@ -169,25 +191,11 @@ public class ChapterOutlineOptionService {
     }
 
     private List<Map<String, Object>> recentChapterContexts(UUID storyId, Chapter currentChapter) {
-        return chapterRepository.findByStoryIdOrderByChapterNumberAsc(storyId).stream()
-            .filter(chapter -> chapter.getChapterNumber() != null
-                && currentChapter.getChapterNumber() != null
-                && chapter.getChapterNumber() < currentChapter.getChapterNumber())
-            .filter(chapter -> chapter.getContent() != null && !chapter.getContent().isBlank())
-            .sorted((left, right) -> Integer.compare(right.getChapterNumber(), left.getChapterNumber()))
-            .limit(3)
-            .map(this::recentChapterContext)
-            .toList();
-    }
-
-    private Map<String, Object> recentChapterContext(Chapter chapter) {
-        Map<String, Object> values = new LinkedHashMap<>();
-        values.put("id", chapter.getId());
-        values.put("chapterNumber", chapter.getChapterNumber());
-        values.put("title", chapter.getTitle());
-        values.put("content", chapter.getContent());
-        values.put("wordCount", chapter.getWordCount());
-        return values;
+        return chapterMemorySummaryService.recentChapterContexts(
+            storyId,
+            currentChapter,
+            chapterRepository.findByStoryIdOrderByChapterNumberAsc(storyId)
+        );
     }
 
     private void validateGeneratedResponse(

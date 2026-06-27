@@ -19,6 +19,12 @@ class DraftGenerateRequest(BaseModel):
     blueprint: dict[str, Any]
     confirmed_outline: dict[str, Any] = Field(..., alias="confirmedOutline")
     recent_chapters: list[dict[str, Any]] = Field(default_factory=list, alias="recentChapters")
+    timeline: list[dict[str, Any]] = Field(default_factory=list)
+    characters: list[dict[str, Any]] = Field(default_factory=list)
+    world: list[dict[str, Any]] = Field(default_factory=list)
+    foreshadows: list[dict[str, Any]] = Field(default_factory=list)
+    additional_memory: list[dict[str, Any]] = Field(default_factory=list, alias="additionalMemory")
+    context_metadata: dict[str, Any] = Field(default_factory=dict, alias="contextMetadata")
     extra_prompt: str | None = Field(default=None, alias="extraPrompt")
     target_words: int = Field(default=DEFAULT_DRAFT_TARGET_WORDS, alias="targetWords", gt=0)
     model_profile: str | None = Field(default=None, alias="modelProfile")
@@ -46,15 +52,22 @@ class DraftGenerateRequest(BaseModel):
             raise ValueError("draft context objects must be non-empty JSON objects")
         return value
 
-    @field_validator("recent_chapters")
+    @field_validator("recent_chapters", "timeline", "characters", "world", "foreshadows", "additional_memory")
     @classmethod
-    def recent_chapters_must_be_objects(
+    def list_items_must_be_objects(
         cls,
         value: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         for item in value:
             if not isinstance(item, dict):
-                raise ValueError("recentChapters items must be JSON objects")
+                raise ValueError("structured context list items must be JSON objects")
+        return value
+
+    @field_validator("context_metadata")
+    @classmethod
+    def context_metadata_must_be_object(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("contextMetadata must be a JSON object")
         return value
 
     @field_validator("target_words", mode="before")

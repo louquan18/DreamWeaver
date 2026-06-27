@@ -144,9 +144,9 @@ async def auto_repair_p0(request: dict[str, Any]) -> DraftRepairResult:
     raw_response = ""
     async for token in llm_stream_with_fallback(
         build_repair_messages(request),
-        models=agent_model_chain("rewrite"),
+        models=agent_model_chain("repair"),
         max_tokens=_repair_max_tokens(payload),
-        temperature=agent_temperature("rewrite"),
+        temperature=agent_temperature("repair"),
     ):
         raw_response += token
     result = parse_repair_result(raw_response)

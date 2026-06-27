@@ -58,6 +58,15 @@ class ChapterGenerationServiceTests {
     @Mock
     private ChapterOutlineRepository outlineRepository;
 
+    @Mock
+    private ChapterMemorySummaryService chapterMemorySummaryService;
+
+    @Mock
+    private StoryMemoryService storyMemoryService;
+
+    @Mock
+    private AdditionalMemoryRetriever additionalMemoryRetriever;
+
     @Test
     void createRejectsDraftGenerationBeforeOutlineConfirmed() {
         Chapter chapter = chapter(ChapterWorkflowStage.OUTLINE_OPTIONS_GENERATED);
@@ -89,6 +98,19 @@ class ChapterGenerationServiceTests {
         assertThat(mapValue(writingContext.get("blueprint"))).containsEntry("premise", "A betrayed disciple uses dream visions.");
         assertThat(mapValue(writingContext.get("confirmedOutline"))).containsKey("finalOutline");
         assertThat(writingContext.get("recentChapters")).asList().hasSize(1);
+        assertThat(writingContext.get("timeline")).isEqualTo(java.util.List.of(Map.of("id", "tl-1", "event", "Ming sealed the gate")));
+        assertThat(writingContext.get("characters")).isEqualTo(java.util.List.of(Map.of("name", "Ming")));
+        assertThat(writingContext.get("world")).isEqualTo(java.util.List.of(Map.of("subject", "Mirror fire", "locked", true)));
+        assertThat(writingContext.get("foreshadows")).isEqualTo(java.util.List.of(Map.of("id", "fs-1", "status", "triggered")));
+        assertThat(writingContext.get("additionalMemory")).isEqualTo(java.util.List.of(Map.of(
+            "type",
+            "foreshadow",
+            "content",
+            "The mirror token is burning."
+        )));
+        assertThat(mapValue(writingContext.get("contextMetadata")))
+            .containsEntry("policy", "structured-memory-v1")
+            .containsKey("limits");
     }
 
     @Test
@@ -422,7 +444,10 @@ class ChapterGenerationServiceTests {
             storyRepository,
             blueprintRepository,
             outlineRepository,
-            chapterRepository
+            chapterRepository,
+            chapterMemorySummaryService,
+            storyMemoryService,
+            additionalMemoryRetriever
         );
     }
 
@@ -439,6 +464,27 @@ class ChapterGenerationServiceTests {
         )).thenReturn(Optional.of(outline()));
         when(chapterRepository.findByStoryIdOrderByChapterNumberAsc(STORY_ID))
             .thenReturn(java.util.List.of(previousChapter(), chapter));
+        when(chapterMemorySummaryService.recentChapterContexts(any(), any(), any())).thenReturn(java.util.List.of(Map.of(
+            "title",
+            "Previous",
+            "content",
+            "Lin Jin escaped the outer sect with the dream token.",
+            "contextRole",
+            "recent_full_text"
+        )));
+        when(storyMemoryService.buildOutlineMemoryContext(STORY_ID)).thenReturn(new StoryMemoryService.MemoryContext(
+            java.util.List.of(Map.of("id", "tl-1", "event", "Ming sealed the gate")),
+            java.util.List.of(Map.of("name", "Ming")),
+            java.util.List.of(Map.of("subject", "Mirror fire", "locked", true)),
+            java.util.List.of(Map.of("id", "fs-1", "status", "triggered")),
+            java.util.List.of()
+        ));
+        when(additionalMemoryRetriever.retrieve(any(), any(), any(), any(), any(), any())).thenReturn(java.util.List.of(Map.of(
+            "type",
+            "foreshadow",
+            "content",
+            "The mirror token is burning."
+        )));
     }
 
     private Chapter chapter(ChapterWorkflowStage stage) {

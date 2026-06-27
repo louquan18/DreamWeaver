@@ -23,6 +23,10 @@ class MemoryExtractionGenerationError(RuntimeError):
         self.message = message
 
 
+MEMORY_EXTRACTION_MAX_TOKENS = 8192
+MEMORY_EXTRACTION_RETRY_MAX_TOKENS = 12288
+
+
 def validate_memory_extraction_request(request: dict[str, Any]) -> dict[str, Any]:
     """Validate Java-supplied context for extracting pending memory changes."""
     if not isinstance(request, dict):
@@ -124,17 +128,39 @@ async def extract_memory_from_confirmed_draft(
     """Extract pending memory changes from a confirmed draft via the reviewer model profile."""
     payload = validate_memory_extraction_request(request)
     messages = build_memory_extraction_messages_from_request(payload)
+    raw_response = await _invoke_memory_extraction_agent(
+        messages,
+        max_tokens=MEMORY_EXTRACTION_MAX_TOKENS,
+    )
+    try:
+        result = parse_memory_extraction_response(raw_response)
+    except MemoryExtractionGenerationError as exc:
+        if not _should_retry_invalid_json(exc, raw_response):
+            raise
+        raw_response = await _invoke_memory_extraction_agent(
+            messages,
+            max_tokens=MEMORY_EXTRACTION_RETRY_MAX_TOKENS,
+        )
+        result = parse_memory_extraction_response(raw_response)
+
+    _assert_result_matches_request(result, payload)
+    return result
+
+
+async def _invoke_memory_extraction_agent(
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int,
+) -> str:
     raw_response = ""
     async for token in llm_stream_with_fallback(
         messages,
-        models=agent_model_chain("reviewer"),
-        max_tokens=4096,
-        temperature=agent_temperature("reviewer"),
+        models=agent_model_chain("memory_extract"),
+        max_tokens=max_tokens,
+        temperature=agent_temperature("memory_extract"),
     ):
         raw_response += token
-    result = parse_memory_extraction_response(raw_response)
-    _assert_result_matches_request(result, payload)
-    return result
+    return raw_response
 
 
 def parse_memory_extraction_response(raw_response: str) -> MemoryExtractionResult:
@@ -170,11 +196,64 @@ def parse_memory_extraction_response(raw_response: str) -> MemoryExtractionResul
 
 def _strip_json_fence(raw_response: str) -> str:
     content = (raw_response or "").strip()
-    if content.startswith("```json"):
-        return content.split("```json", 1)[1].split("```", 1)[0].strip()
+    if content.lower().startswith("```json"):
+        return content.split("\n", 1)[1].split("```", 1)[0].strip()
     if content.startswith("```"):
         return content.split("```", 1)[1].split("```", 1)[0].strip()
+    if not content.startswith("{"):
+        extracted = _extract_first_json_object(content)
+        if extracted:
+            return extracted
     return content
+
+
+def _extract_first_json_object(content: str) -> str | None:
+    start = content.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(content)):
+        char = content[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return content[start : index + 1].strip()
+    return None
+
+
+def _should_retry_invalid_json(
+    exc: MemoryExtractionGenerationError,
+    raw_response: str,
+) -> bool:
+    if exc.code != "INVALID_MEMORY_EXTRACTION_JSON":
+        return False
+
+    content = _strip_json_fence(raw_response)
+    if content and not content.rstrip().endswith("}"):
+        return True
+
+    truncation_markers = (
+        "Unterminated string",
+        "Expecting ',' delimiter",
+        "Expecting property name enclosed in double quotes",
+    )
+    return any(marker in exc.message for marker in truncation_markers)
 
 
 def _assert_result_matches_request(

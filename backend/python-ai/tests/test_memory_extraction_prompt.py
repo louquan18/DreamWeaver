@@ -86,6 +86,9 @@ def test_memory_extraction_prompt_rejects_unsupported_memory_and_uses_warnings()
     assert "do not pretend they are certain facts" in system_prompt
     assert "blockingHints" in system_prompt
     assert "conflictHints" in system_prompt
+    assert "Recent chapter compression rules" in system_prompt
+    assert 'contextRole="recent_full_text"' in system_prompt
+    assert 'contextRole="recent_summary"' in system_prompt
 
 
 def test_memory_extraction_prompt_metadata_is_machine_readable():

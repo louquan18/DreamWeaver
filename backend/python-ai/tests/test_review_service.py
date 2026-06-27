@@ -90,12 +90,12 @@ def test_parse_review_quality_response_rejects_invalid_schema():
 
 
 @pytest.mark.asyncio
-async def test_review_quality_uses_reviewer_model_not_writer_or_planner(monkeypatch):
+async def test_review_quality_uses_review_model_not_draft_or_outline(monkeypatch):
     captured = {}
 
     def fake_agent_model_chain(agent_type):
         captured["agent_type"] = agent_type
-        return ["reviewer-model"]
+        return ["review-model"]
 
     def fake_agent_temperature(agent_type):
         captured["temperature_agent_type"] = agent_type
@@ -118,14 +118,14 @@ async def test_review_quality_uses_reviewer_model_not_writer_or_planner(monkeypa
     report = await review_quality(review_request_payload())
 
     assert report.overall_score == 86
-    assert captured["agent_type"] == "reviewer"
-    assert captured["temperature_agent_type"] == "reviewer"
-    assert captured["models"] == ["reviewer-model"]
+    assert captured["agent_type"] == "review"
+    assert captured["temperature_agent_type"] == "review"
+    assert captured["models"] == ["review-model"]
     assert captured["max_tokens"] == 4096
     prompt = "\n".join(message["content"] for message in captured["messages"])
     assert "Lin Jin followed the dream fire into the mirror market." in prompt
-    assert "planner" not in captured["agent_type"]
-    assert "writer" not in captured["agent_type"]
+    assert "outline" not in captured["agent_type"]
+    assert "draft" not in captured["agent_type"]
 
 
 @pytest.mark.parametrize(

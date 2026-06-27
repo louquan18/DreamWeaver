@@ -4,11 +4,11 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 from pydantic import ValidationError
 
-from src.models.provider import get_agent_llm
+from src.models.llm_client import llm_stream_with_fallback
+from src.models.provider import agent_model_chain, agent_temperature
 from src.schemas.blueprint import (
     BlueprintValidationIssue,
     LightBlueprintGenerateRequest,
@@ -73,7 +73,7 @@ BLUEPRINT_HUMAN_PROMPT = """作者设想：
 
 请生成轻量小说蓝图。"""
 
-LLMInvoker = Callable[[list[Any]], Awaitable[str]]
+LLMInvoker = Callable[[list[dict[str, str]]], Awaitable[str]]
 
 
 class BlueprintGenerationError(RuntimeError):
@@ -89,13 +89,14 @@ async def generate_light_blueprint(
     logger.info(f"[Blueprint Agent] Generating light blueprint for story={story_id}")
     hints = _build_hints(request)
     messages = [
-        SystemMessage(content=BLUEPRINT_SYSTEM_PROMPT),
-        HumanMessage(
-            content=BLUEPRINT_HUMAN_PROMPT.format(
+        {"role": "system", "content": BLUEPRINT_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": BLUEPRINT_HUMAN_PROMPT.format(
                 source_prompt=request.source_prompt,
                 hints=json.dumps(hints, ensure_ascii=False, indent=2),
-            )
-        ),
+            ),
+        },
     ]
 
     content = await _invoke_llm(messages, llm)
@@ -130,17 +131,26 @@ def _build_hints(request: LightBlueprintGenerateRequest) -> dict[str, Any]:
     return hints
 
 
-async def _invoke_llm(messages: list[Any], llm: Any | LLMInvoker | None) -> str:
-    runner = llm or get_agent_llm("blueprint")
-
+async def _invoke_llm(messages: list[dict[str, str]], llm: Any | LLMInvoker | None) -> str:
     try:
-        if callable(runner) and not hasattr(runner, "ainvoke"):
-            return await runner(messages)
+        if llm is not None:
+            if callable(llm) and not hasattr(llm, "ainvoke"):
+                content = await llm(messages)
+            else:
+                response = await llm.ainvoke(messages)
+                content = getattr(response, "content", response)
+            if not isinstance(content, str):
+                raise TypeError("LLM response content must be a string")
+            return content
 
-        response = await runner.ainvoke(messages)
-        content = getattr(response, "content", response)
-        if not isinstance(content, str):
-            raise TypeError("LLM response content must be a string")
+        content = ""
+        async for token in llm_stream_with_fallback(
+            messages,
+            models=agent_model_chain("blueprint"),
+            max_tokens=8192,
+            temperature=agent_temperature("blueprint"),
+        ):
+            content += token
         return content
     except Exception as exc:
         raise BlueprintGenerationError(f"LLM invocation failed: {exc}") from exc

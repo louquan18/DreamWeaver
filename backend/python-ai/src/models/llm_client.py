@@ -90,6 +90,13 @@ async def llm_stream_with_fallback(
             ):
                 emitted = True
                 yield token
+            if not emitted:
+                last_exc = RuntimeError(f"[LLM:{model}] returned an empty response")
+                if idx < len(models) - 1:
+                    logger.warning(f"[LLM:{model}] returned no content, falling back to next")
+                    continue
+                logger.error(f"[LLM:{model}] returned no content and no fallback left")
+                raise last_exc
             return  # 成功完成
         except Exception as e:  # noqa: BLE001 - 需捕获任意网络/模型异常以触发 fallback
             last_exc = e

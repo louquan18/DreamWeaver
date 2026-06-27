@@ -7,12 +7,13 @@ from typing import Any
 from loguru import logger
 from pydantic import ValidationError
 
-from src.models.provider import get_agent_llm
+from src.models.llm_client import llm_stream_with_fallback
+from src.models.provider import agent_model_chain, agent_temperature
 from src.schemas.outline import ChapterOutlineOptionsDraft
 from src.services.outline_context import build_outline_options_context
 from src.services.outline_prompt import OutlineOptionsPromptContext, build_outline_options_prompt
 
-LLMInvoker = Callable[[list[Any]], Awaitable[str]]
+LLMInvoker = Callable[[list[dict[str, str]]], Awaitable[str]]
 
 
 class OutlineGenerationError(RuntimeError):
@@ -292,17 +293,26 @@ def _clean_text(value: Any) -> str | None:
     return stripped or None
 
 
-async def _invoke_llm(messages: list[Any], llm: Any | LLMInvoker | None) -> str:
-    runner = llm or get_agent_llm("planner")
-
+async def _invoke_llm(messages: list[dict[str, str]], llm: Any | LLMInvoker | None) -> str:
     try:
-        if callable(runner) and not hasattr(runner, "ainvoke"):
-            return await runner(messages)
+        if llm is not None:
+            if callable(llm) and not hasattr(llm, "ainvoke"):
+                content = await llm(messages)
+            else:
+                response = await llm.ainvoke(messages)
+                content = getattr(response, "content", response)
+            if not isinstance(content, str):
+                raise TypeError("LLM response content must be a string")
+            return content
 
-        response = await runner.ainvoke(messages)
-        content = getattr(response, "content", response)
-        if not isinstance(content, str):
-            raise TypeError("LLM response content must be a string")
+        content = ""
+        async for token in llm_stream_with_fallback(
+            messages,
+            models=agent_model_chain("outline"),
+            max_tokens=8192,
+            temperature=agent_temperature("outline"),
+        ):
+            content += token
         return content
     except OutlineGenerationError:
         raise

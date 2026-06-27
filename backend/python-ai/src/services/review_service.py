@@ -116,9 +116,9 @@ async def review_quality(request: dict[str, Any]) -> DraftQualityReviewReport:
     raw_response = ""
     async for token in llm_stream_with_fallback(
         messages,
-        models=agent_model_chain("reviewer"),
+        models=agent_model_chain("review"),
         max_tokens=4096,
-        temperature=agent_temperature("reviewer"),
+        temperature=agent_temperature("review"),
     ):
         raw_response += token
     return parse_review_quality_response(raw_response)

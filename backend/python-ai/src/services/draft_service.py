@@ -65,6 +65,48 @@ DRAFT_HUMAN_PROMPT = """请严格按以下 Java 已确认写作上下文生成�
 请直接输出完整章节正文。"""
 
 
+RECENT_CHAPTER_COMPRESSION_RULES = """
+
+Recent chapter compression rules:
+- contextRole="recent_full_text" entries are the strongest local continuity source; use content for immediate scene, tone, and handoff details.
+- contextRole="recent_summary" entries are compressed history; use summary for continuity facts and do not infer missing scene details from it.
+- If an older chapter has no summary/content field, treat it as unavailable rather than inventing events."""
+
+STRUCTURED_MEMORY_CONTEXT_PROMPT = """
+
+[structuredTimeline]
+{timeline}
+
+[characterStates]
+{characters}
+
+[worldFacts]
+{world}
+
+[openForeshadows]
+{foreshadows}
+
+[additionalMemory]
+{additional_memory}
+
+[contextMetadata]
+{context_metadata}
+
+Structured memory rules:
+- Context priority is confirmedOutline > blueprint.lockedFacts > structured memory > recentChapters > additionalMemory > extraPrompt.
+- Do not reset abilities, locations, relationships, injuries, knowledge, or motivations recorded in characterStates.
+- Do not violate worldFacts with locked=true.
+- openForeshadows with status=triggered, revealed, or needsAttention=true should be considered before planting new hints.
+- If recentChapters conflict with structured memory, follow structured memory."""
+
+ADDITIONAL_MEMORY_PRIORITY_RULES = """
+
+Additional memory rules:
+- additionalMemory is supplemental retrieval material for remote details only.
+- It must not override confirmedOutline, blueprint.lockedFacts, or official structured memory.
+- If additionalMemory conflicts with official structured memory, follow official structured memory and keep the conflict visible for review/consistency."""
+
+
 class DraftGenerationInputError(ValueError):
     """Validation error for Java-supplied generate_draft inputs."""
 
@@ -141,7 +183,17 @@ def build_confirmed_outline_draft_messages(
                 recent_chapters=_json(payload.get("recentChapters")),
                 extra_prompt=payload.get("extraPrompt") or "无",
                 target_words=target_words,
-            ),
+            )
+            + STRUCTURED_MEMORY_CONTEXT_PROMPT.format(
+                timeline=_json(payload.get("timeline")),
+                characters=_json(payload.get("characters")),
+                world=_json(payload.get("world")),
+                foreshadows=_json(payload.get("foreshadows")),
+                additional_memory=_json(payload.get("additionalMemory")),
+                context_metadata=_json(payload.get("contextMetadata")),
+            )
+            + ADDITIONAL_MEMORY_PRIORITY_RULES
+            + RECENT_CHAPTER_COMPRESSION_RULES,
         },
     ]
 
@@ -206,8 +258,8 @@ async def stream_confirmed_outline_draft(
     """Stream draft tokens using the confirmed outline as the hard writing plan."""
     draft_request = _coerce_draft_request(request)
     messages = build_confirmed_outline_draft_messages(draft_request)
-    models = agent_model_chain("writer")
-    temperature = agent_temperature("writer")
+    models = agent_model_chain("draft")
+    temperature = agent_temperature("draft")
     async for token in llm_stream_with_fallback(
         messages,
         models=models,
