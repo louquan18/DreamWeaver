@@ -85,10 +85,15 @@ def test_outline_options_prompt_documents_c_foreshadow_fallback_rules():
     assert 'action="trigger"' in system_prompt
     assert "其次强化已有伏笔" in system_prompt
     assert 'action="strengthen"' in system_prompt
-    assert "最后才埋设新伏笔" in system_prompt
+    assert "紧急伏笔优先" in system_prompt
+    assert 'attentionStatus="overdue"' in system_prompt
+    assert "伏笔预算控制" in system_prompt
+    assert "达到 10 个时" in system_prompt
+    assert "允许混合处理" in system_prompt
     assert 'action="plant"' in system_prompt
     assert "禁止伪造不存在的前文伏笔" in system_prompt
-    assert "没有输入 foreshadowId 时，不能声称其来自历史章节" in system_prompt
+    assert "resolve/trigger/strengthen 必须引用输入中的 foreshadowId" in system_prompt
+    assert "riskNotes 必须说明" in system_prompt
 
 
 def test_outline_options_prompt_has_context_slots_for_future_context_loader():

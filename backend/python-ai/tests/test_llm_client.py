@@ -45,3 +45,28 @@ async def test_llm_stream_with_fallback_raises_when_all_models_return_empty(monk
                 models=["empty-model"],
             )
         ]
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_with_fallback_passes_model_specific_extra_body(monkeypatch):
+    calls = []
+
+    async def fake_llm_stream(messages, model, max_tokens, temperature, extra_body=None):
+        calls.append((model, extra_body))
+        yield "ok"
+
+    monkeypatch.setattr(llm_client, "llm_stream", fake_llm_stream)
+
+    tokens = [
+        token
+        async for token in llm_client.llm_stream_with_fallback(
+            [],
+            models=["deepseek-v4-pro"],
+            model_extra_body=lambda model: {"thinking": {"type": "disabled"}}
+            if model.startswith("deepseek")
+            else None,
+        )
+    ]
+
+    assert tokens == ["ok"]
+    assert calls == [("deepseek-v4-pro", {"thinking": {"type": "disabled"}})]

@@ -31,9 +31,11 @@ A/B/C 方案差异：
 C 方案伏笔兜底规则：
 1. 优先回收已有伏笔：如果输入的 existingForeshadows 中存在适合本章解决或触发的伏笔，使用 action="resolve" 或 action="trigger"，并在 foreshadowId 中引用原 id。
 2. 其次强化已有伏笔：如果暂不适合回收，但已有伏笔可以加深读者期待，使用 action="strengthen"，并引用原 foreshadowId。
-3. 最后才埋设新伏笔：只有在 existingForeshadows 为空，或全部明确不适合本章处理时，才允许使用 action="plant"。
-4. 禁止伪造不存在的前文伏笔：不得把本章新写的线索描述成“前文已经出现”；没有输入 foreshadowId 时，不能声称其来自历史章节。
-5. 当 C 方案埋设新伏笔时，riskNotes 必须说明为什么没有回收或强化已有伏笔。
+3. 紧急伏笔优先：如果 existingForeshadows 中存在 needsAttention=true 或 attentionStatus="overdue" 的伏笔，C 方案必须至少 resolve/trigger/strengthen 其中一个。
+4. 伏笔预算控制：当 existingForeshadows 已达到 10 个时，禁止使用 action="plant"；未满 10 个且无紧急伏笔时，可以埋设新伏笔。
+5. 允许混合处理：可以先 resolve/trigger/strengthen 一个已有伏笔，再使用 action="plant" 埋设轻量新伏笔，但不能让新伏笔挤占紧急旧伏笔。
+6. 禁止伪造不存在的前文伏笔：不得把本章新写的线索描述成“前文已经出现”；resolve/trigger/strengthen 必须引用输入中的 foreshadowId，没有输入 foreshadowId 时，不能声称其来自历史章节。
+7. 当 C 方案在 existingForeshadows 非空时仍埋设新伏笔，riskNotes 必须说明为什么本章不回收或强化其他已有伏笔。
 
 ChapterOutlineOptionsDraft schema：
 {schema}

@@ -20,7 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.MemoryChangeSet;
+import com.dreamweaver.entity.MemoryChangeSetStatus;
 import com.dreamweaver.entity.StoryMemorySnapshot;
+import com.dreamweaver.repository.MemoryChangeSetRepository;
 import com.dreamweaver.repository.StoryMemorySnapshotRepository;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,18 +49,34 @@ public class StoryMemoryService {
         .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
 
     private final StoryMemorySnapshotRepository snapshotRepository;
+    private final MemoryChangeSetRepository changeSetRepository;
 
-    public StoryMemoryService(StoryMemorySnapshotRepository snapshotRepository) {
+    public StoryMemoryService(
+        StoryMemorySnapshotRepository snapshotRepository,
+        MemoryChangeSetRepository changeSetRepository
+    ) {
         this.snapshotRepository = snapshotRepository;
+        this.changeSetRepository = changeSetRepository;
     }
 
     @Transactional(readOnly = true)
     public Map<String, Object> buildExistingMemory(UUID storyId) {
         Map<String, Object> memory = snapshotRepository.findByStoryId(storyId)
             .map(this::toMemoryMap)
-            .orElseGet(() -> emptyMemory(storyId));
+            .orElseGet(() -> memoryFromConfirmedChangeSets(storyId));
         memory.put("fingerprint", fingerprint(memory));
         return memory;
+    }
+
+    @Transactional(readOnly = true)
+    public MemoryLibrary library(UUID storyId, String type) {
+        Map<String, Object> memory = buildExistingMemory(storyId);
+        String normalizedType = normalizeLibraryType(type);
+        return new MemoryLibrary(
+            normalizedType,
+            copyMemoryList(memory.get(normalizedType)),
+            mapOrEmpty(memory.get("fingerprint"))
+        );
     }
 
     @Transactional(readOnly = true)
@@ -430,6 +448,59 @@ public class StoryMemoryService {
         return memory;
     }
 
+    private Map<String, Object> memoryFromConfirmedChangeSets(UUID storyId) {
+        Map<String, Object> memory = emptyMemory(storyId);
+        List<Map<String, Object>> timeline = new ArrayList<>();
+        List<Map<String, Object>> characters = new ArrayList<>();
+        List<Map<String, Object>> world = new ArrayList<>();
+        List<Map<String, Object>> foreshadows = new ArrayList<>();
+
+        for (MemoryChangeSet changeSet : changeSetRepository.findByStoryIdAndStatusOrderByCreatedAtAsc(
+            storyId,
+            MemoryChangeSetStatus.CONFIRMED
+        )) {
+            appendConfirmedChanges(timeline, changeSet.getTimelineChanges(), storyId, changeSet);
+            appendConfirmedChanges(characters, changeSet.getCharacterChanges(), storyId, changeSet);
+            appendConfirmedChanges(world, changeSet.getWorldChanges(), storyId, changeSet);
+            appendConfirmedChanges(foreshadows, changeSet.getForeshadowChanges(), storyId, changeSet);
+        }
+
+        memory.put("timeline", timeline);
+        memory.put("characters", characters);
+        memory.put("world", world);
+        memory.put("foreshadows", foreshadows);
+        return memory;
+    }
+
+    private void appendConfirmedChanges(
+        List<Map<String, Object>> target,
+        List<Map<String, Object>> changes,
+        UUID storyId,
+        MemoryChangeSet changeSet
+    ) {
+        for (Map<String, Object> change : nullToList(changes)) {
+            Map<String, Object> item = copyMap(change);
+            item.putIfAbsent("storyId", storyId.toString());
+            item.putIfAbsent("chapterId", stringOrNull(changeSet.getChapterId()));
+            item.putIfAbsent("sourceGenerationId", stringOrNull(changeSet.getSourceGenerationId()));
+            item.putIfAbsent("changeSetId", stringOrNull(changeSet.getId()));
+            target.add(item);
+        }
+    }
+
+    private String normalizeLibraryType(String type) {
+        return switch (type == null ? "" : type.trim().toLowerCase()) {
+            case "timeline" -> "timeline";
+            case "characters", "character" -> "characters";
+            case "world" -> "world";
+            case "foreshadows", "foreshadow" -> "foreshadows";
+            default -> throw new BadRequestException(
+                "memory_type_invalid",
+                "Unsupported story memory type: " + type
+            );
+        };
+    }
+
     private StoryMemorySnapshot newSnapshot(UUID storyId) {
         StoryMemorySnapshot snapshot = new StoryMemorySnapshot();
         snapshot.setStoryId(storyId);
@@ -475,6 +546,23 @@ public class StoryMemoryService {
 
     private List<Map<String, Object>> copyList(List<Map<String, Object>> value) {
         return new ArrayList<>(nullToList(value).stream().map(this::copyMap).toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> copyMemoryList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+            .filter(Map.class::isInstance)
+            .map(item -> (Map<String, Object>) item)
+            .map(this::copyMap)
+            .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mapOrEmpty(Object value) {
+        return value instanceof Map<?, ?> map ? copyMap((Map<String, Object>) map) : Map.of();
     }
 
     private List<Map<String, Object>> limit(List<Map<String, Object>> value, int limit) {
@@ -559,6 +647,13 @@ public class StoryMemoryService {
         List<Map<String, Object>> world,
         List<Map<String, Object>> foreshadows,
         List<Map<String, Object>> additionalMemory
+    ) {
+    }
+
+    public record MemoryLibrary(
+        String type,
+        List<Map<String, Object>> items,
+        Map<String, Object> fingerprint
     ) {
     }
 }

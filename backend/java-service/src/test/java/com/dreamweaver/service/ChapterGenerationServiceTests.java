@@ -205,6 +205,48 @@ class ChapterGenerationServiceTests {
     }
 
     @Test
+    void confirmDraftRejectsMissingQualityGateReportsForNewGenerations() {
+        Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+        ChapterGeneration generation = succeededGeneration(GENERATION_ID, "The dream fire answered.");
+        generation.setRequest(Map.of("quality_gate", "draft-review-v1"));
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+
+        assertThatThrownBy(() -> service.confirmDraft(STORY_ID, CHAPTER_ID, GENERATION_ID))
+            .isInstanceOf(BadRequestException.class)
+            .hasMessageContaining("quality gate reports");
+
+        verify(chapterRepository, never()).save(any(Chapter.class));
+    }
+
+    @Test
+    void confirmDraftRejectsBlockingQualityGateReports() {
+        Chapter chapter = chapter(ChapterWorkflowStage.REVISION_REQUIRED);
+        ChapterGeneration generation = succeededGeneration(GENERATION_ID, "The dream fire answered.");
+        generation.setRequest(Map.of("quality_gate", "draft-review-v1"));
+        generation.setConsistencyReport(clearConsistencyReport());
+        generation.setReviewReport(blockingReviewReport());
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+
+        assertThatThrownBy(() -> service.confirmDraft(STORY_ID, CHAPTER_ID, GENERATION_ID))
+            .isInstanceOf(BadRequestException.class)
+            .hasMessageContaining("blocking review or consistency issues");
+
+        verify(chapterRepository, never()).save(any(Chapter.class));
+    }
+
+    @Test
     void confirmDraftIsIdempotentForSameConfirmedGeneration() {
         Chapter chapter = chapter(ChapterWorkflowStage.DRAFT_CONFIRMED);
         chapter.setLastGenerationId(GENERATION_ID);
@@ -363,6 +405,67 @@ class ChapterGenerationServiceTests {
 
         assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.GENERATED);
         assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+    }
+
+    @Test
+    void completeFromStreamPersistsQualityGateReports() {
+        Chapter chapter = chapter(ChapterWorkflowStage.REVIEWING);
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.RUNNING, null);
+        generation.setRequest(Map.of("auto_adopt", true, "quality_gate", "draft-review-v1"));
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(generationRepository.save(any(ChapterGeneration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.completeFromStream(
+            STORY_ID,
+            CHAPTER_ID,
+            GENERATION_ID,
+            "The completed draft.",
+            1800,
+            java.util.List.of(),
+            clearConsistencyReport(),
+            clearReviewReport()
+        );
+
+        assertThat(generation.getConsistencyReport()).isEqualTo(clearConsistencyReport());
+        assertThat(generation.getReviewReport()).isEqualTo(clearReviewReport());
+        assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.GENERATED);
+        assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+    }
+
+    @Test
+    void completeFromStreamMarksRevisionRequiredWhenQualityGateBlocks() {
+        Chapter chapter = chapter(ChapterWorkflowStage.REVIEWING);
+        ChapterGeneration generation = generation(GENERATION_ID, GenerationStatus.RUNNING, null);
+        generation.setRequest(Map.of("auto_adopt", true, "quality_gate", "draft-review-v1"));
+        ChapterGenerationService service = service();
+        when(chapterRepository.findByIdAndStoryId(CHAPTER_ID, STORY_ID)).thenReturn(Optional.of(chapter));
+        when(generationRepository.findByIdAndStoryIdAndChapterId(
+            GENERATION_ID,
+            STORY_ID,
+            CHAPTER_ID
+        )).thenReturn(Optional.of(generation));
+        when(generationRepository.save(any(ChapterGeneration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.completeFromStream(
+            STORY_ID,
+            CHAPTER_ID,
+            GENERATION_ID,
+            "The completed draft.",
+            1800,
+            java.util.List.of(),
+            clearConsistencyReport(),
+            blockingReviewReport()
+        );
+
+        assertThat(chapter.getContent()).isNull();
+        assertThat(chapter.getStatus()).isEqualTo(ChapterStatus.DRAFT);
+        assertThat(chapter.getWorkflowStage()).isEqualTo(ChapterWorkflowStage.REVISION_REQUIRED);
     }
 
     @Test
@@ -575,6 +678,49 @@ class ChapterGenerationServiceTests {
             "writing",
             true,
             Map.of()
+        );
+    }
+
+    private Map<String, Object> clearConsistencyReport() {
+        return Map.of(
+            "summary", "No consistency issues.",
+            "issues", java.util.List.of(),
+            "checkedRuleIds", java.util.List.of("WORLD_LOCKED_FACT"),
+            "passedRuleIds", java.util.List.of("WORLD_LOCKED_FACT"),
+            "blocking", false,
+            "autoRepairRequired", false
+        );
+    }
+
+    private Map<String, Object> clearReviewReport() {
+        return Map.of(
+            "overallScore", 86,
+            "summary", "Draft is ready.",
+            "issues", java.util.List.of(),
+            "blocking", false,
+            "autoRepairRequired", false,
+            "revisionHints", java.util.List.of(),
+            "strengths", java.util.List.of("Clear pacing")
+        );
+    }
+
+    private Map<String, Object> blockingReviewReport() {
+        return Map.of(
+            "overallScore", 40,
+            "summary", "Draft misses the confirmed ending hook.",
+            "issues", java.util.List.of(Map.of(
+                "severity", "P0",
+                "category", "plot",
+                "message", "Ending hook is missing.",
+                "evidence", "No mirror speaks at the ending.",
+                "suggestion", "Restore the confirmed ending hook.",
+                "blocking", true,
+                "autoRepairRequired", true
+            )),
+            "blocking", true,
+            "autoRepairRequired", true,
+            "revisionHints", java.util.List.of("Restore ending hook."),
+            "strengths", java.util.List.of()
         );
     }
 }

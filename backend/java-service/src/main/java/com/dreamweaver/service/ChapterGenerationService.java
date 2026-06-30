@@ -101,6 +101,7 @@ public class ChapterGenerationService {
         requestSnapshot.put("model_profile", modelProfile(request));
         requestSnapshot.put("auto_adopt", request.autoAdopt() == null || request.autoAdopt());
         requestSnapshot.put("source", "java-service");
+        requestSnapshot.put("quality_gate", "draft-review-v1");
         requestSnapshot.put("writing_context", buildWritingContext(storyId, chapter));
         if (request.options() != null) {
             requestSnapshot.put("options", request.options());
@@ -166,6 +167,7 @@ public class ChapterGenerationService {
         }
 
         assertConfirmableGeneration(generation);
+        assertQualityGatePassed(generation);
 
         if (DRAFT_LOCKED_STAGES.contains(chapter.getWorkflowStage())) {
             return chapter;
@@ -366,18 +368,58 @@ public class ChapterGenerationService {
         Integer wordCount,
         List<Map<String, Object>> executionHistory
     ) {
+        return completeFromStream(
+            storyId,
+            chapterId,
+            generationId,
+            draft,
+            wordCount,
+            executionHistory,
+            null,
+            null
+        );
+    }
+
+    @Transactional
+    public ChapterGeneration markReviewing(UUID storyId, UUID chapterId, UUID generationId) {
         Chapter chapter = chapterService.get(storyId, chapterId);
         ChapterGeneration generation = get(storyId, chapterId, generationId);
+
+        if (!DRAFT_LOCKED_STAGES.contains(chapter.getWorkflowStage())) {
+            chapter.setWorkflowStage(ChapterWorkflowStage.REVIEWING);
+            chapterService.save(chapter);
+        }
+        return generation;
+    }
+
+    @Transactional
+    public ChapterGeneration completeFromStream(
+        UUID storyId,
+        UUID chapterId,
+        UUID generationId,
+        String draft,
+        Integer wordCount,
+        List<Map<String, Object>> executionHistory,
+        Map<String, Object> consistencyReport,
+        Map<String, Object> reviewReport
+    ) {
+        Chapter chapter = chapterService.get(storyId, chapterId);
+        ChapterGeneration generation = get(storyId, chapterId, generationId);
+        boolean blocked = qualityGateMissing(generation.getRequest(), consistencyReport, reviewReport)
+            || qualityGateBlocked(consistencyReport)
+            || qualityGateBlocked(reviewReport);
 
         generation.setStatus(GenerationStatus.SUCCEEDED);
         generation.setDraft(draft);
         generation.setWordCount(wordCount == null ? lengthOrNull(draft) : wordCount);
         generation.setExecutionHistory(executionHistory == null ? List.of() : executionHistory);
+        generation.setConsistencyReport(consistencyReport);
+        generation.setReviewReport(reviewReport);
         generation.setCompletedAt(OffsetDateTime.now());
         generation = generationRepository.save(generation);
 
         if (!DRAFT_LOCKED_STAGES.contains(chapter.getWorkflowStage())) {
-            if (autoAdopt(generation.getRequest())) {
+            if (!blocked && autoAdopt(generation.getRequest())) {
                 chapter.setContent(generation.getDraft());
                 chapter.setWordCount(generation.getWordCount());
                 chapter.setLastGenerationId(generation.getId());
@@ -387,7 +429,9 @@ public class ChapterGenerationService {
                     chapter.getLastGenerationId() == null ? ChapterStatus.DRAFT : ChapterStatus.GENERATED
                 );
             }
-            chapter.setWorkflowStage(ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION);
+            chapter.setWorkflowStage(
+                blocked ? ChapterWorkflowStage.REVISION_REQUIRED : ChapterWorkflowStage.DRAFT_READY_FOR_CONFIRMATION
+            );
             chapterService.save(chapter);
         }
 
@@ -424,7 +468,68 @@ public class ChapterGenerationService {
 
     private boolean autoAdopt(Map<String, Object> requestSnapshot) {
         Object value = requestSnapshot.get("auto_adopt");
-        return !(value instanceof Boolean autoAdopt) || autoAdopt;
+        return !(value instanceof Boolean) || (Boolean) value;
+    }
+
+    private void assertQualityGatePassed(ChapterGeneration generation) {
+        if (!qualityGateRequired(generation.getRequest())) {
+            return;
+        }
+        Map<String, Object> consistencyReport = generation.getConsistencyReport();
+        Map<String, Object> reviewReport = generation.getReviewReport();
+        if (consistencyReport == null || consistencyReport.isEmpty()
+            || reviewReport == null || reviewReport.isEmpty()) {
+            throw new BadRequestException(
+                "draft_quality_gate_missing",
+                "Draft quality gate reports are required before confirmation"
+            );
+        }
+        if (qualityGateBlocked(consistencyReport) || qualityGateBlocked(reviewReport)) {
+            throw new BadRequestException(
+                "draft_quality_gate_blocked",
+                "Draft has blocking review or consistency issues"
+            );
+        }
+    }
+
+    private boolean qualityGateRequired(Map<String, Object> requestSnapshot) {
+        return "draft-review-v1".equals(requestSnapshot.get("quality_gate"));
+    }
+
+    private boolean qualityGateMissing(
+        Map<String, Object> requestSnapshot,
+        Map<String, Object> consistencyReport,
+        Map<String, Object> reviewReport
+    ) {
+        if (!qualityGateRequired(requestSnapshot)) {
+            return false;
+        }
+        return consistencyReport == null || consistencyReport.isEmpty()
+            || reviewReport == null || reviewReport.isEmpty();
+    }
+
+    private boolean qualityGateBlocked(Map<String, Object> report) {
+        if (report == null || report.isEmpty()) {
+            return false;
+        }
+        Object blocking = report.get("blocking");
+        if (blocking instanceof Boolean && (Boolean) blocking) {
+            return true;
+        }
+        Object issues = report.get("issues");
+        if (issues instanceof List<?>) {
+            for (Object item : (List<?>) issues) {
+                if (item instanceof Map<?, ?>) {
+                    Map<?, ?> issue = (Map<?, ?>) item;
+                    Object issueBlocking = issue.get("blocking");
+                    Object severity = issue.get("severity");
+                    if ((issueBlocking instanceof Boolean && (Boolean) issueBlocking) || "P0".equals(severity)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private Integer lengthOrNull(String draft) {

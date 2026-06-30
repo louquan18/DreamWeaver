@@ -18,7 +18,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.MemoryChangeSet;
+import com.dreamweaver.entity.MemoryChangeSetStatus;
 import com.dreamweaver.entity.StoryMemorySnapshot;
+import com.dreamweaver.repository.MemoryChangeSetRepository;
 import com.dreamweaver.repository.StoryMemorySnapshotRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,6 +32,9 @@ class StoryMemoryServiceTests {
 
     @Mock
     private StoryMemorySnapshotRepository snapshotRepository;
+
+    @Mock
+    private MemoryChangeSetRepository changeSetRepository;
 
     @Test
     void applyChangeSetCreatesOfficialMemorySnapshot() {
@@ -118,8 +123,42 @@ class StoryMemoryServiceTests {
         assertThat(fingerprint.get("hash")).isInstanceOf(String.class);
     }
 
+    @Test
+    void libraryReturnsRequestedMemoryTypeWithFingerprint() {
+        StoryMemorySnapshot snapshot = snapshot();
+        snapshot.setCharacters(List.of(Map.of("id", "character:Lin Jin", "name", "Lin Jin")));
+        when(snapshotRepository.findByStoryId(STORY_ID)).thenReturn(Optional.of(snapshot));
+
+        StoryMemoryService.MemoryLibrary library = service().library(STORY_ID, "characters");
+
+        assertThat(library.type()).isEqualTo("characters");
+        assertThat(library.items()).hasSize(1);
+        assertThat(library.items().getFirst()).containsEntry("name", "Lin Jin");
+        assertThat(library.fingerprint()).containsEntry("algorithm", "sha-256");
+    }
+
+    @Test
+    void libraryFallsBackToConfirmedChangeSetsWhenSnapshotIsMissing() {
+        when(snapshotRepository.findByStoryId(STORY_ID)).thenReturn(Optional.empty());
+        when(changeSetRepository.findByStoryIdAndStatusOrderByCreatedAtAsc(
+            STORY_ID,
+            MemoryChangeSetStatus.CONFIRMED
+        )).thenReturn(List.of(changeSet()));
+
+        StoryMemoryService.MemoryLibrary library = service().library(STORY_ID, "timeline");
+
+        assertThat(library.type()).isEqualTo("timeline");
+        assertThat(library.items()).hasSize(1);
+        assertThat(library.items().getFirst())
+            .containsEntry("event", "Lin Jin wakes the mirror fire")
+            .containsEntry("storyId", STORY_ID.toString())
+            .containsEntry("chapterId", CHAPTER_ID.toString())
+            .containsEntry("sourceGenerationId", GENERATION_ID.toString());
+        assertThat(library.fingerprint()).containsEntry("algorithm", "sha-256");
+    }
+
     private StoryMemoryService service() {
-        return new StoryMemoryService(snapshotRepository);
+        return new StoryMemoryService(snapshotRepository, changeSetRepository);
     }
 
     private StoryMemorySnapshot snapshot() {
@@ -190,6 +229,7 @@ class StoryMemoryServiceTests {
         changeSet.setStoryId(STORY_ID);
         changeSet.setChapterId(CHAPTER_ID);
         changeSet.setSourceGenerationId(GENERATION_ID);
+        changeSet.setStatus(MemoryChangeSetStatus.CONFIRMED);
         changeSet.setCharacterChanges(List.of(Map.of(
             "changeId",
             "char-1",

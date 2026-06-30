@@ -5,7 +5,8 @@
 """
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -19,6 +20,7 @@ async def llm_stream(
     model: str,
     max_tokens: int = 8192,
     temperature: float = 0.7,
+    extra_body: dict[str, Any] | None = None,
 ) -> AsyncIterator[str]:
     """
     流式调用指定模型 - 逐 token yield content
@@ -39,6 +41,8 @@ async def llm_stream(
         "temperature": temperature,
         "stream": True,
     }
+    if extra_body:
+        body.update(extra_body)
 
     async with httpx.AsyncClient(timeout=300) as client:
         async with client.stream(
@@ -74,6 +78,7 @@ async def llm_stream_with_fallback(
     models: list[str],
     max_tokens: int = 8192,
     temperature: float = 0.7,
+    model_extra_body: Callable[[str], dict[str, Any] | None] | None = None,
 ) -> AsyncIterator[str]:
     """
     依次尝试 models 中的模型做流式输出。
@@ -85,9 +90,23 @@ async def llm_stream_with_fallback(
     for idx, model in enumerate(models):
         emitted = False
         try:
-            async for token in llm_stream(
-                messages, model=model, max_tokens=max_tokens, temperature=temperature
-            ):
+            extra_body = model_extra_body(model) if model_extra_body else None
+            if extra_body:
+                stream = llm_stream(
+                    messages,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    extra_body=extra_body,
+                )
+            else:
+                stream = llm_stream(
+                    messages,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            async for token in stream:
                 emitted = True
                 yield token
             if not emitted:

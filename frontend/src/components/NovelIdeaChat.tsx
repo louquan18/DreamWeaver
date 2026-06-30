@@ -1,8 +1,8 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   confirmNovelBlueprint,
-  createStory,
   generateNovelBlueprint,
+  getCurrentNovelBlueprint,
   updateNovelBlueprint,
 } from '../services/api'
 import type { BlueprintGenerateResult, BlueprintUpdateRequest, NovelBlueprint, Story } from '../types'
@@ -14,6 +14,10 @@ const SAMPLE_IDEAS = [
 ]
 
 interface NovelIdeaChatProps {
+  story?: Story | null
+  autoGeneratePrompt?: string
+  autoGenerateKey?: number
+  onCreateStoryClick?: () => void
   onStoryCreated?: (story: Story) => void
 }
 
@@ -41,21 +45,29 @@ interface BlueprintFormState {
   lockedFacts: string
 }
 
-export function NovelIdeaChat({ onStoryCreated }: NovelIdeaChatProps) {
+export function NovelIdeaChat({
+  story,
+  autoGeneratePrompt,
+  autoGenerateKey,
+  onCreateStoryClick,
+  onStoryCreated,
+}: NovelIdeaChatProps) {
   const [idea, setIdea] = useState('')
   const [result, setResult] = useState<BlueprintGenerateResult | null>(null)
   const [form, setForm] = useState<BlueprintFormState>(() => emptyBlueprintForm())
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [loadingCurrent, setLoadingCurrent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const lastAutoKeyRef = useRef<number | undefined>(undefined)
 
   const trimmedIdea = idea.trim()
   const characterCount = trimmedIdea.length
-  const busy = loading || saving || confirming
+  const busy = loadingCurrent || loading || saving || confirming
   const activeBlueprint = result?.blueprint
-  const activeStoryId = result?.story?.id || activeBlueprint?.storyId || activeBlueprint?.story_id || ''
+  const activeStoryId = story?.id || result?.story?.id || activeBlueprint?.storyId || activeBlueprint?.story_id || ''
   const activeBlueprintId = activeBlueprint?.id || ''
   const blueprintStatus = activeBlueprint?.status || 'generated'
   const isConfirmed = blueprintStatus.toLowerCase() === 'confirmed'
@@ -67,23 +79,20 @@ export function NovelIdeaChat({ onStoryCreated }: NovelIdeaChatProps) {
     return buildBlueprintSummary(activeBlueprint)
   }, [activeBlueprint])
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (!trimmedIdea || busy) return
+  const generateBlueprintFromPrompt = useCallback(async (sourcePrompt: string) => {
+    if (!story?.id) {
+      setError('Create or select a novel before generating a blueprint.')
+      return
+    }
 
     setLoading(true)
     setError('')
     setNotice('')
     setResult(null)
     try {
-      const story = await createStory({
-        title: buildStoryTitle(trimmedIdea),
-        description: trimmedIdea,
-      })
-      onStoryCreated?.(story)
-
       const data = await generateNovelBlueprint(story.id, {
-        sourcePrompt: trimmedIdea,
+        sourcePrompt,
+        genre: story.genre,
       })
       const nextResult = {
         ...data,
@@ -97,6 +106,64 @@ export function NovelIdeaChat({ onStoryCreated }: NovelIdeaChatProps) {
     } finally {
       setLoading(false)
     }
+  }, [story])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadCurrentBlueprint() {
+      if (!story?.id) {
+        setResult(null)
+        setForm(emptyBlueprintForm())
+        setIdea('')
+        setError('')
+        setNotice('')
+        return
+      }
+
+      setLoadingCurrent(true)
+      setError('')
+      setNotice('')
+      setResult(null)
+      try {
+        const blueprint = await getCurrentNovelBlueprint(story.id)
+        if (cancelled) return
+        setResult({ story, blueprint })
+        setForm(buildBlueprintForm(blueprint))
+        setIdea(text(blueprint.sourcePrompt ?? blueprint.source_prompt) || story.description || '')
+      } catch (loadError) {
+        if (cancelled) return
+        setResult(null)
+        setForm(emptyBlueprintForm())
+        setIdea(story.description || '')
+        if (!isMissingBlueprintError(loadError)) {
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load current blueprint')
+        }
+      } finally {
+        if (!cancelled) setLoadingCurrent(false)
+      }
+    }
+
+    void loadCurrentBlueprint()
+
+    return () => {
+      cancelled = true
+    }
+  }, [story])
+
+  useEffect(() => {
+    if (!story?.id || !autoGeneratePrompt || autoGenerateKey === undefined) return
+    if (loadingCurrent || result || lastAutoKeyRef.current === autoGenerateKey) return
+    lastAutoKeyRef.current = autoGenerateKey
+    setIdea(autoGeneratePrompt)
+    void generateBlueprintFromPrompt(autoGeneratePrompt)
+  }, [autoGenerateKey, autoGeneratePrompt, generateBlueprintFromPrompt, loadingCurrent, result, story?.id])
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!trimmedIdea || busy) return
+
+    await generateBlueprintFromPrompt(trimmedIdea)
   }
 
   async function handleSaveBlueprint() {
@@ -167,35 +234,63 @@ export function NovelIdeaChat({ onStoryCreated }: NovelIdeaChatProps) {
     <section className="idea-chat" aria-labelledby="idea-chat-title">
       <div className="idea-chat-header">
         <div>
-          <p className="idea-chat-kicker">Novel kickoff</p>
-          <h2 id="idea-chat-title">Start from one idea</h2>
+          <p className="idea-chat-kicker">Blueprint</p>
+          <h2 id="idea-chat-title">
+            {story ? story.title : 'No novel selected'}
+          </h2>
         </div>
         <span className={`idea-chat-state ${busy ? 'loading' : result ? 'success' : 'idle'}`}>
-          {loading ? 'Generating' : saving ? 'Saving' : confirming ? 'Confirming' : result ? 'Blueprint ready' : 'Drafting room'}
+          {loadingCurrent
+            ? 'Loading'
+            : loading
+              ? 'Generating'
+              : saving
+                ? 'Saving'
+                : confirming
+                  ? 'Confirming'
+                  : result
+                    ? blueprintStatus
+                    : story
+                      ? 'Needs blueprint'
+                      : 'No novel'}
         </span>
       </div>
 
-      <form className="idea-chat-form" onSubmit={handleSubmit}>
-        <label htmlFor="novel-idea">Tell DreamWeaver the novel you want to write.</label>
-        <textarea
-          id="novel-idea"
-          value={idea}
-          onChange={(event) => setIdea(event.target.value)}
-          placeholder="Example: A young archivist inherits a haunted starship and must rewrite its logbook before the crew repeats a century-old mutiny."
-          rows={5}
-          maxLength={10000}
-          disabled={busy}
-        />
-
-        <div className="idea-chat-tools">
-          <span>{characterCount.toLocaleString()} / 10,000</span>
-          <button type="submit" disabled={!trimmedIdea || busy}>
-            {loading ? 'Building blueprint...' : 'Generate blueprint'}
-          </button>
+      {!story && (
+        <div className="idea-chat-empty">
+          <strong>Create a novel workspace first.</strong>
+          <p>Blueprints belong to a single novel, so the story record is the boundary for all later memory and chapter work.</p>
+          {onCreateStoryClick && (
+            <button type="button" onClick={onCreateStoryClick}>
+              Create novel
+            </button>
+          )}
         </div>
-      </form>
+      )}
 
-      {!result && (
+      {story && !loadingCurrent && !result && (
+        <form className="idea-chat-form" onSubmit={handleSubmit}>
+          <label htmlFor="novel-idea">Seed the blueprint for this novel.</label>
+          <textarea
+            id="novel-idea"
+            value={idea}
+            onChange={(event) => setIdea(event.target.value)}
+            placeholder="Example: A young archivist inherits a haunted starship and must rewrite its logbook before the crew repeats a century-old mutiny."
+            rows={5}
+            maxLength={10000}
+            disabled={busy}
+          />
+
+          <div className="idea-chat-tools">
+            <span>{characterCount.toLocaleString()} / 10,000</span>
+            <button type="submit" disabled={!trimmedIdea || busy}>
+              {loading ? 'Building blueprint...' : 'Generate blueprint'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {story && !result && !loadingCurrent && (
         <div className="idea-samples" aria-label="Sample ideas">
           {SAMPLE_IDEAS.map((sample) => (
             <button key={sample} type="button" onClick={() => handleSample(sample)} disabled={busy}>
@@ -481,10 +576,8 @@ export function NovelIdeaChat({ onStoryCreated }: NovelIdeaChatProps) {
   )
 }
 
-function buildStoryTitle(idea: string) {
-  const normalized = idea.replace(/\s+/g, ' ').trim()
-  if (normalized.length <= 48) return normalized
-  return `${normalized.slice(0, 47)}...`
+function isMissingBlueprintError(error: unknown) {
+  return error instanceof Error && /blueprint.*not found|current blueprint not found|not found/i.test(error.message)
 }
 
 function emptyBlueprintForm(): BlueprintFormState {

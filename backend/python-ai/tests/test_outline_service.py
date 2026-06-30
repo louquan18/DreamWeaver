@@ -112,6 +112,17 @@ def _payload_with_c_action(action: str, foreshadow_id: str | None = "fs-1"):
     return payload
 
 
+def _existing_foreshadows(count: int, **extra):
+    return [
+        {
+            "id": f"fs-{index}",
+            "summary": f"Existing foreshadow {index}.",
+            **extra,
+        }
+        for index in range(1, count + 1)
+    ]
+
+
 @pytest.mark.asyncio
 async def test_generate_outline_options_with_fake_llm():
     fake_llm = FakeLLM(json.dumps(_valid_payload(), ensure_ascii=False))
@@ -151,11 +162,19 @@ async def test_generate_outline_options_uses_streaming_model_chain_by_default(mo
         captured["temperature_agent_type"] = agent_type
         return 0.5
 
-    async def fake_llm_stream_with_fallback(messages, models, max_tokens, temperature):
+    async def fake_llm_stream_with_fallback(
+        messages,
+        models,
+        max_tokens,
+        temperature,
+        model_extra_body=None,
+    ):
         captured["messages"] = messages
         captured["models"] = models
         captured["max_tokens"] = max_tokens
         captured["temperature"] = temperature
+        captured["deepseek_extra_body"] = model_extra_body("deepseek-v4-pro")
+        captured["other_extra_body"] = model_extra_body("openai/gpt-4o")
         yield raw_json
 
     monkeypatch.setattr(
@@ -184,6 +203,8 @@ async def test_generate_outline_options_uses_streaming_model_chain_by_default(mo
     assert captured["models"] == ["outline-model"]
     assert captured["max_tokens"] == 8192
     assert captured["temperature"] == 0.5
+    assert captured["deepseek_extra_body"] == {"thinking": {"type": "disabled"}}
+    assert captured["other_extra_body"] is None
     assert captured["messages"][0]["role"] == "system"
     assert captured["messages"][1]["role"] == "user"
 
@@ -336,15 +357,93 @@ async def test_generate_outline_options_allows_c_to_strengthen_existing_foreshad
 
 
 @pytest.mark.asyncio
-async def test_generate_outline_options_rejects_c_plant_when_existing_foreshadow_available():
-    with pytest.raises(OutlineGenerationError, match="cannot plant"):
+async def test_generate_outline_options_allows_c_plant_when_existing_foreshadows_under_budget():
+    result = await generate_outline_options(
+        story_id="story-1",
+        chapter_id="chapter-2",
+        foreshadows=[{"id": "fs-1", "summary": "The token carries a dream-fire mark."}],
+        llm=FakeLLM(json.dumps(_payload_with_c_action("plant", None), ensure_ascii=False)),
+    )
+
+    assert result.options[2].foreshadow_actions[0].action == "plant"
+
+
+@pytest.mark.asyncio
+async def test_generate_outline_options_rejects_c_plant_when_active_foreshadow_budget_is_full():
+    with pytest.raises(OutlineGenerationError, match="budget is full"):
+        await generate_outline_options(
+            story_id="story-1",
+            chapter_id="chapter-2",
+            foreshadows=_existing_foreshadows(10),
+            llm=FakeLLM(
+                json.dumps(_payload_with_c_action("plant", None), ensure_ascii=False)
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_outline_options_rejects_c_plant_when_urgent_foreshadow_is_unhandled():
+    with pytest.raises(OutlineGenerationError, match="urgent existing foreshadow"):
+        await generate_outline_options(
+            story_id="story-1",
+            chapter_id="chapter-2",
+            foreshadows=[
+                {
+                    "id": "fs-1",
+                    "summary": "The token clue is overdue.",
+                    "needsAttention": True,
+                }
+            ],
+            llm=FakeLLM(json.dumps(_payload_with_c_action("plant", None), ensure_ascii=False)),
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_outline_options_allows_c_to_handle_urgent_foreshadow_and_plant():
+    payload = _valid_payload()
+    payload["options"][2]["foreshadowActions"] = [
+        {
+            "action": "strengthen",
+            "description": "Bring the overdue token clue back into the scene.",
+            "foreshadowId": "fs-1",
+        },
+        {
+            "action": "plant",
+            "description": "Plant a light new clue for the next arc.",
+            "foreshadowId": None,
+        },
+    ]
+
+    result = await generate_outline_options(
+        story_id="story-1",
+        chapter_id="chapter-2",
+        foreshadows=[
+            {
+                "id": "fs-1",
+                "summary": "The token clue is overdue.",
+                "attentionStatus": "overdue",
+            }
+        ],
+        llm=FakeLLM(json.dumps(payload, ensure_ascii=False)),
+    )
+
+    assert [action.action for action in result.options[2].foreshadow_actions] == [
+        "strengthen",
+        "plant",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_generate_outline_options_rejects_c_plant_with_existing_without_risk_notes():
+    payload = _payload_with_c_action("plant", None)
+    payload["options"][2]["riskNotes"] = []
+
+    with pytest.raises(OutlineGenerationError, match="riskNotes"):
         await generate_outline_options(
             story_id="story-1",
             chapter_id="chapter-2",
             foreshadows=[{"id": "fs-1", "summary": "The token carries a dream-fire mark."}],
-            llm=FakeLLM(
-                json.dumps(_payload_with_c_action("plant", None), ensure_ascii=False)
-            ),
+            llm=FakeLLM(json.dumps(payload, ensure_ascii=False)),
         )
 
 

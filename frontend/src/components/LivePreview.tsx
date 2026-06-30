@@ -70,8 +70,11 @@ export function LivePreview({
       && (lastGenerationId === activeGenerationId || generation?.adopted)
       && isDraftConfirmedStage(workflowStage),
   )
-  const reviewIssues = getIssues(generation?.reviewReport, 'Review')
-  const consistencyIssues = getIssues(generation?.consistencyReport, 'Consistency')
+  const reviewReport = getReport(generation, 'reviewReport', 'review_report')
+  const consistencyReport = getReport(generation, 'consistencyReport', 'consistency_report')
+  const hasQualityReports = Boolean(reviewReport || consistencyReport)
+  const reviewIssues = getIssues(reviewReport, 'Review')
+  const consistencyIssues = getIssues(consistencyReport, 'Consistency')
   const issues = [...reviewIssues, ...consistencyIssues]
   const issueSummary = getIssueSummary(issues)
   const blockingIssues = issues.filter((issue) => issue.blocking)
@@ -82,6 +85,7 @@ export function LivePreview({
     confirmed,
     generationLabel,
     hasDraft,
+    hasQualityReports,
     hasSuccessfulGeneration,
     isGenerating,
   })
@@ -136,6 +140,9 @@ export function LivePreview({
           <span className={issueSummary.blocking ? 'check-blocked' : 'check-ok'}>
             Blocking issues: {issueSummary.blocking}
           </span>
+          <span className={hasQualityReports ? 'check-ok' : 'check-wait'}>
+            Reports: {hasQualityReports ? 'attached' : 'waiting'}
+          </span>
         </div>
       </section>
 
@@ -162,6 +169,10 @@ export function LivePreview({
               <h4>Issues</h4>
               <span>{issueCountLabel(issueSummary)}</span>
             </div>
+            <ReportSummary
+              reviewReport={reviewReport}
+              consistencyReport={consistencyReport}
+            />
             {issues.length > 0 && (
               <div className="issue-summary" aria-label="Issue summary">
                 <span>
@@ -193,7 +204,7 @@ export function LivePreview({
               </div>
             ) : (
               <p className="inspector-empty">
-                {generation ? 'No review or consistency issues were returned.' : 'Review results will appear after a generation is selected.'}
+                {getIssueEmptyMessage(Boolean(generation), hasQualityReports)}
               </p>
             )}
           </section>
@@ -243,6 +254,56 @@ export function LivePreview({
   )
 }
 
+function getIssueEmptyMessage(hasGeneration: boolean, hasQualityReports: boolean) {
+  if (!hasGeneration) return 'Review results will appear after a generation is selected.'
+  if (!hasQualityReports) return 'Quality reports have not been attached to this generation yet.'
+  return 'Quality reports are clear; no review or consistency issues were returned.'
+}
+
+function ReportSummary({
+  reviewReport,
+  consistencyReport,
+}: {
+  reviewReport?: Record<string, unknown>
+  consistencyReport?: Record<string, unknown>
+}) {
+  if (!reviewReport && !consistencyReport) return null
+
+  const reviewScore =
+    getNumber(reviewReport?.overallScore)
+    ?? getNumber(reviewReport?.overall_score)
+    ?? getNumber(reviewReport?.score)
+  const reviewSummary = getString(reviewReport?.summary)
+  const consistencySummary = getString(consistencyReport?.summary)
+  const checkedRules = getArrayCount(consistencyReport?.checkedRuleIds ?? consistencyReport?.checked_rule_ids)
+  const passedRules = getArrayCount(consistencyReport?.passedRuleIds ?? consistencyReport?.passed_rule_ids)
+
+  return (
+    <div className="report-summary" aria-label="Draft quality reports">
+      {reviewReport && (
+        <article>
+          <div>
+            <span>Review</span>
+            {reviewScore !== undefined && <strong>{reviewScore}</strong>}
+          </div>
+          {reviewSummary && <p>{reviewSummary}</p>}
+        </article>
+      )}
+      {consistencyReport && (
+        <article>
+          <div>
+            <span>Consistency</span>
+            {(checkedRules > 0 || passedRules > 0) && (
+              <strong>{passedRules}/{checkedRules || passedRules}</strong>
+            )}
+          </div>
+          {consistencySummary && <p>{consistencySummary}</p>}
+        </article>
+      )}
+    </div>
+  )
+}
+
 function IssueGroup({ title, issues }: { title: string, issues: DisplayIssue[] }) {
   return (
     <div className="issue-group">
@@ -268,6 +329,17 @@ function IssueGroup({ title, issues }: { title: string, issues: DisplayIssue[] }
       ))}
     </div>
   )
+}
+
+function getReport(
+  generation: ChapterGeneration | null | undefined,
+  camelKey: 'reviewReport' | 'consistencyReport',
+  snakeKey: 'review_report' | 'consistency_report',
+) {
+  const camelReport = generation?.[camelKey]
+  if (isRecord(camelReport)) return camelReport
+  const snakeReport = generation?.[snakeKey]
+  return isRecord(snakeReport) ? snakeReport : undefined
 }
 
 function getIssues(report: Record<string, unknown> | undefined, source: string): DisplayIssue[] {
@@ -359,6 +431,7 @@ function getConfirmationReadiness({
   confirmed,
   generationLabel,
   hasDraft,
+  hasQualityReports,
   hasSuccessfulGeneration,
   isGenerating,
 }: {
@@ -367,6 +440,7 @@ function getConfirmationReadiness({
   confirmed: boolean
   generationLabel: string
   hasDraft: boolean
+  hasQualityReports: boolean
   hasSuccessfulGeneration: boolean
   isGenerating: boolean
 }): ConfirmationReadiness {
@@ -420,6 +494,16 @@ function getConfirmationReadiness({
     }
   }
 
+  if (!hasQualityReports) {
+    return {
+      state: 'waiting',
+      tone: 'danger',
+      label: 'Waiting for quality reports',
+      detail: 'The draft completed, but consistency and review reports have not been attached yet.',
+      buttonLabel: 'Waiting',
+    }
+  }
+
   if (blockingCount > 0) {
     return {
       state: 'blocked',
@@ -449,6 +533,14 @@ function getLocationQuote(value: unknown) {
 
 function getString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function getNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function getArrayCount(value: unknown) {
+  return Array.isArray(value) ? value.length : 0
 }
 
 function getStringArray(value: unknown) {

@@ -1,202 +1,69 @@
 .app {
-  min-height: 100vh;
-  background: #0f0f23;
+  height: 100vh;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(122, 162, 255, 0.12), transparent 34%),
+    linear-gradient(135deg, #0f0f23 0%, #111622 46%, #14131f 100%);
   color: #e0e0e0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .app-header {
-  background: #1a1a2e;
+  align-items: center;
+  background: rgba(26, 26, 46, 0.92);
   border-bottom: 1px solid #2a2a4a;
-  padding: 16px 32px;
   display: flex;
-  align-items: baseline;
+  justify-content: space-between;
   gap: 16px;
+  padding: 14px 24px;
 }
 
 .app-header h1 {
-  margin: 0;
-  font-size: 24px;
   color: #fff;
+  font-size: 24px;
+  margin: 0;
 }
 
 .app-subtitle {
+  color: #9ea8b8;
+  display: block;
   font-size: 13px;
-  color: #888;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
 }
 
-.app-main {
-  flex: 1;
-  display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(520px, 1fr) minmax(320px, 380px);
-  grid-template-areas: "sidebar editor rail";
-  gap: 18px;
-  padding: 18px 24px 24px;
-  overflow: hidden;
-  min-height: 0;
+.app-run-state {
+  border: 1px solid #313a50;
+  border-radius: 999px;
+  color: #c9d3e2;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 10px;
+  text-transform: uppercase;
 }
 
-.workspace-sidebar,
-.workspace-editor,
-.workspace-rail {
-  min-height: 0;
-  min-width: 0;
+.app-run-state.state-connecting,
+.app-run-state.state-generating {
+  border-color: rgba(255, 209, 102, 0.45);
+  color: #ffd166;
 }
 
-.workspace-sidebar,
-.workspace-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-gutter: stable;
+.app-run-state.state-done {
+  border-color: rgba(97, 211, 155, 0.45);
+  color: #8af0bc;
 }
 
-.workspace-sidebar {
-  grid-area: sidebar;
+.app-run-state.state-error {
+  border-color: rgba(255, 107, 122, 0.5);
+  color: #ff8c9a;
 }
 
-.workspace-editor {
-  grid-area: editor;
-  display: flex;
-}
-
-.workspace-rail {
-  grid-area: rail;
-}
-
-.workspace-editor .live-preview {
-  flex: 1;
-  height: 100%;
-  min-height: 0;
-}
-
-.workspace-editor .preview-layout {
-  flex: 1;
-  min-height: 0;
-}
-
-.workspace-editor .preview-content {
-  min-height: 0;
-}
-
-.workspace-editor .draft-inspector {
-  min-height: 0;
-  overflow: auto;
-}
-
-.workspace-rail .outline-grid {
-  grid-template-columns: 1fr;
-}
-
-.workspace-rail .outline-panel-header,
-.workspace-rail .memory-panel-header {
-  align-items: stretch;
-  flex-direction: column;
-}
-
-.workspace-rail .outline-header-actions,
-.workspace-rail .memory-header-actions,
-.workspace-rail .memory-editor-actions,
-.workspace-rail .memory-final-actions div {
-  width: 100%;
-}
-
-.workspace-rail .outline-header-actions button,
-.workspace-rail .memory-header-actions button,
-.workspace-rail .memory-editor-actions button,
-.workspace-rail .memory-final-actions button {
-  flex: 1;
-}
-
-.workspace-rail .memory-toolbar,
-.workspace-rail .memory-stage-strip {
-  grid-template-columns: 1fr;
-}
-
-.workspace-rail .memory-status-metrics,
-.workspace-rail .memory-tabs {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.workspace-rail .memory-editor-heading,
-.workspace-rail .memory-final-actions {
-  align-items: stretch;
-  flex-direction: column;
-}
-
-@media (max-width: 1320px) {
-  .app-main {
-    grid-template-columns: minmax(280px, 330px) minmax(460px, 1fr) minmax(300px, 340px);
-    gap: 14px;
-    padding: 16px;
-  }
-}
-
-@media (max-width: 1180px) {
-  .app-main {
-    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-    grid-template-areas:
-      "sidebar editor"
-      "rail rail";
-    overflow-y: auto;
-  }
-
-  .workspace-sidebar,
-  .workspace-editor,
-  .workspace-rail {
-    overflow: visible;
-  }
-
-  .workspace-editor .live-preview {
-    min-height: 640px;
-  }
-
-  .workspace-rail {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding-right: 0;
-  }
-}
-
-@media (max-width: 900px) {
-  .app-main {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "sidebar"
-      "editor"
-      "rail";
-  }
-
-  .workspace-rail {
-    display: flex;
-  }
-
-  .workspace-editor .live-preview {
-    min-height: 560px;
-  }
-}
-
-@media (max-width: 760px) {
+@media (max-width: 620px) {
   .app-header {
     align-items: flex-start;
     flex-direction: column;
-    gap: 6px;
-    padding: 14px 16px;
-  }
-
-  .app-main {
-    padding: 12px;
-  }
-
-  .workspace-editor .live-preview {
-    min-height: 520px;
-  }
-
-  .workspace-rail .memory-status-metrics,
-  .workspace-rail .memory-tabs {
-    grid-template-columns: 1fr;
+    padding: 12px 14px;
   }
 }

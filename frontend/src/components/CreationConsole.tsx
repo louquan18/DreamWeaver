@@ -1,55 +1,44 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { createChapter, createStory, listChapters, listStories } from '../services/api'
+import { useMemo, useState, type FormEvent } from 'react'
+import { createChapter } from '../services/api'
 import type { Chapter, Story } from '../types'
 import './CreationConsole.css'
 
 interface CreationConsoleProps {
+  selectedStory: Story | null
+  selectedChapter: Chapter | null
+  chapters: Chapter[]
+  loading?: boolean
   onGenerate: (storyId: string, chapterId: string) => void
   onCancel: () => void
   onReset: () => void
-  onSelectionChange: (story: Story | null, chapter: Chapter | null) => void
-  refreshKey: number
-  storyRefreshKey?: number
-  preferredStoryId?: string
+  onChapterCreated: (chapter: Chapter) => void
+  onChapterSelected: (chapterId: string) => void
   status: 'idle' | 'connecting' | 'generating' | 'done' | 'error'
   errorMessage: string
 }
 
 export function CreationConsole({
+  selectedStory,
+  selectedChapter,
+  chapters,
+  loading = false,
   onGenerate,
   onCancel,
   onReset,
-  onSelectionChange,
-  refreshKey,
-  storyRefreshKey = 0,
-  preferredStoryId,
+  onChapterCreated,
+  onChapterSelected,
   status,
   errorMessage,
 }: CreationConsoleProps) {
-  const [stories, setStories] = useState<Story[]>([])
-  const [chapters, setChapters] = useState<Chapter[]>([])
-  const [selectedStoryId, setSelectedStoryId] = useState('')
-  const [selectedChapterId, setSelectedChapterId] = useState('')
-  const [storyTitle, setStoryTitle] = useState('')
-  const [storyGenre, setStoryGenre] = useState('')
-  const [storyDescription, setStoryDescription] = useState('')
   const [chapterNumber, setChapterNumber] = useState(1)
   const [chapterTitle, setChapterTitle] = useState('')
   const [panelError, setPanelError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
 
+  const selectedStoryId = selectedStory?.id || ''
+  const selectedChapterId = selectedChapter?.id || ''
   const isRunning = status === 'connecting' || status === 'generating'
-
-  const selectedStory = useMemo(
-    () => stories.find((story) => story.id === selectedStoryId) || null,
-    [stories, selectedStoryId],
-  )
-
-  const selectedChapter = useMemo(
-    () => chapters.find((chapter) => chapter.id === selectedChapterId) || null,
-    [chapters, selectedChapterId],
-  )
-
+  const busy = isRunning || loading || creating
   const selectedWorkflowStage = normalizeStage(
     selectedChapter?.workflowStage ?? selectedChapter?.workflow_stage,
   )
@@ -59,125 +48,40 @@ export function CreationConsole({
   const nextChapterNumber = useMemo(() => getNextChapterNumber(chapters), [chapters])
   const canContinueToNextChapter =
     chapters.length === 0 || (lastChapter ? isChapterContinuationUnlocked(lastChapter) : false)
-  const nextChapterDisabled = isRunning || loading || !selectedStoryId || !canContinueToNextChapter
+  const nextChapterDisabled = busy || !selectedStoryId || !canContinueToNextChapter
   const nextChapterDisabledReason = !selectedStoryId
     ? 'Select a novel first'
     : !canContinueToNextChapter
       ? 'Last chapter must be approved before continuing'
       : undefined
 
-  const refreshStories = useCallback(async () => {
-    try {
-      const data = await listStories()
-      setStories(data)
-      if (preferredStoryId && data.some((story) => story.id === preferredStoryId)) {
-        setSelectedStoryId(preferredStoryId)
-      } else if (!selectedStoryId && data.length > 0) {
-        setSelectedStoryId(data[0].id)
-      }
-    } catch (error) {
-      setPanelError(error instanceof Error ? error.message : 'Failed to load stories')
-    } finally {
-      setLoading(false)
-    }
-  }, [preferredStoryId, selectedStoryId])
-
-  const refreshChapters = useCallback(async (storyId: string) => {
-    try {
-      const data = await listChapters(storyId)
-      setChapters(data)
-      setSelectedChapterId((current) => {
-        if (data.some((chapter) => chapter.id === current)) return current
-        return data[0]?.id || ''
-      })
-      setChapterNumber(getNextChapterNumber(data))
-    } catch (error) {
-      setPanelError(error instanceof Error ? error.message : 'Failed to load chapters')
-      setChapters([])
-      setSelectedChapterId('')
-    }
-  }, [])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refreshStories()
-  }, [refreshStories, storyRefreshKey])
-
-  useEffect(() => {
-    if (selectedStoryId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      void refreshChapters(selectedStoryId)
-    }
-  }, [refreshChapters, refreshKey, selectedStoryId])
-
-  useEffect(() => {
-    onSelectionChange(selectedStory, selectedChapter)
-  }, [onSelectionChange, selectedStory, selectedChapter])
-
-  async function handleCreateStory(e: FormEvent) {
-    e.preventDefault()
-    if (!storyTitle.trim()) return
-
-    setLoading(true)
-    setPanelError('')
-    try {
-      const story = await createStory({
-        title: storyTitle.trim(),
-        genre: storyGenre.trim() || undefined,
-        description: storyDescription.trim() || undefined,
-      })
-      setStories((prev) => [story, ...prev])
-      setSelectedStoryId(story.id)
-      setStoryTitle('')
-      setStoryGenre('')
-      setStoryDescription('')
-    } catch (error) {
-      setPanelError(error instanceof Error ? error.message : 'Failed to create story')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleCreateChapter(e: FormEvent) {
-    e.preventDefault()
+  async function handleCreateChapter(event: FormEvent) {
+    event.preventDefault()
     if (!selectedStoryId || chapterNumber < 1) return
 
-    setLoading(true)
-    setPanelError('')
-    try {
-      const chapter = await createChapter(selectedStoryId, {
-        chapterNumber,
-        title: chapterTitle.trim() || undefined,
-      })
-      setChapters((prev) => [...prev, chapter].sort(compareChapters))
-      setSelectedChapterId(chapter.id)
-      setChapterTitle('')
-      setChapterNumber(getChapterNumber(chapter) + 1)
-    } catch (error) {
-      setPanelError(error instanceof Error ? error.message : 'Failed to create chapter')
-    } finally {
-      setLoading(false)
-    }
+    await createChapterForStory(chapterNumber)
   }
 
   async function handleCreateNextChapter() {
     if (nextChapterDisabled) return
+    await createChapterForStory(nextChapterNumber)
+  }
 
-    setLoading(true)
+  async function createChapterForStory(nextNumber: number) {
+    setCreating(true)
     setPanelError('')
     try {
       const chapter = await createChapter(selectedStoryId, {
-        chapterNumber: nextChapterNumber,
+        chapterNumber: nextNumber,
         title: chapterTitle.trim() || undefined,
       })
-      setChapters((prev) => [...prev, chapter].sort(compareChapters))
-      setSelectedChapterId(chapter.id)
+      onChapterCreated(chapter)
       setChapterTitle('')
       setChapterNumber(getChapterNumber(chapter) + 1)
     } catch (error) {
       setPanelError(error instanceof Error ? error.message : 'Failed to create chapter')
     } finally {
-      setLoading(false)
+      setCreating(false)
     }
   }
 
@@ -187,80 +91,22 @@ export function CreationConsole({
     }
   }
 
-  function handleStorySelect(storyId: string) {
-    setPanelError('')
-    setSelectedStoryId(storyId)
-    setChapters([])
-    setSelectedChapterId('')
-  }
-
-  function handleChapterSelect(chapterId: string) {
-    setPanelError('')
-    setSelectedChapterId(chapterId)
-  }
-
   return (
     <div className="creation-console">
       <div className="console-header">
-        <h2>Creation Console</h2>
-        <span>{loading ? 'Syncing' : 'Ready'}</span>
+        <div>
+          <h2>Chapter Console</h2>
+          <p>{selectedStory ? selectedStory.title : 'No novel selected'}</p>
+        </div>
+        <span>{busy ? 'Working' : 'Ready'}</span>
       </div>
 
-      <form className="console-section" onSubmit={handleCreateStory}>
-        <div className="section-title">Novel</div>
-        <label>
-          <span>Create novel</span>
-          <input
-            type="text"
-            value={storyTitle}
-            onChange={(e) => setStoryTitle(e.target.value)}
-            placeholder="Title"
-            disabled={isRunning || loading}
-          />
-        </label>
-        <div className="split-row">
-          <input
-            type="text"
-            value={storyGenre}
-            onChange={(e) => setStoryGenre(e.target.value)}
-            placeholder="Genre"
-            disabled={isRunning || loading}
-          />
-          <button type="submit" disabled={isRunning || loading || !storyTitle.trim()}>
-            Create
-          </button>
-        </div>
-        <textarea
-          value={storyDescription}
-          onChange={(e) => setStoryDescription(e.target.value)}
-          placeholder="Brief description"
-          disabled={isRunning || loading}
-          rows={3}
-        />
-
-        <label>
-          <span>Select novel</span>
-          <select
-            value={selectedStoryId}
-            onChange={(e) => handleStorySelect(e.target.value)}
-            disabled={isRunning || loading || stories.length === 0}
-          >
-            <option value="">No novel selected</option>
-            {stories.map((story) => (
-              <option key={story.id} value={story.id}>
-                {story.title}
-              </option>
-            ))}
-          </select>
-        </label>
-      </form>
-
       <form className="console-section" onSubmit={handleCreateChapter}>
-        <div className="section-title">Chapter</div>
+        <div className="section-title">Chapter setup</div>
         <button
           type="button"
           className="btn-primary btn-next-chapter"
-          onClick={handleCreateNextChapter}
+          onClick={() => void handleCreateNextChapter()}
           disabled={nextChapterDisabled}
           title={nextChapterDisabledReason}
         >
@@ -273,8 +119,8 @@ export function CreationConsole({
               type="number"
               min={1}
               value={chapterNumber}
-              onChange={(e) => setChapterNumber(Number(e.target.value))}
-              disabled={isRunning || loading || !selectedStoryId}
+              onChange={(event) => setChapterNumber(Number(event.target.value))}
+              disabled={busy || !selectedStoryId}
             />
           </label>
           <label>
@@ -282,21 +128,24 @@ export function CreationConsole({
             <input
               type="text"
               value={chapterTitle}
-              onChange={(e) => setChapterTitle(e.target.value)}
+              onChange={(event) => setChapterTitle(event.target.value)}
               placeholder="Chapter title"
-              disabled={isRunning || loading || !selectedStoryId}
+              disabled={busy || !selectedStoryId}
             />
           </label>
         </div>
         <button
           type="submit"
           className="btn-secondary"
-          disabled={isRunning || loading || !selectedStoryId}
+          disabled={busy || !selectedStoryId}
         >
           Create chapter
         </button>
+      </form>
 
-        <div className="chapter-list" aria-label="Chapter list">
+      <div className="console-section">
+        <div className="section-title">Selected chapter</div>
+        <div className="chapter-list compact" aria-label="Chapter picker">
           {chapters.length === 0 ? (
             <div className="empty-list">No chapters yet</div>
           ) : (
@@ -305,8 +154,9 @@ export function CreationConsole({
                 type="button"
                 key={chapter.id}
                 className={`chapter-row ${chapter.id === selectedChapterId ? 'selected' : ''}`}
-                onClick={() => handleChapterSelect(chapter.id)}
+                onClick={() => onChapterSelected(chapter.id)}
                 aria-pressed={chapter.id === selectedChapterId}
+                disabled={isRunning}
               >
                 <span className="chapter-main">
                   <strong>#{getChapterNumber(chapter)}</strong>
@@ -314,18 +164,16 @@ export function CreationConsole({
                 </span>
                 <span className="chapter-meta">
                   {chapter.status}
-                  {' · '}
+                  {' / '}
                   {formatWorkflowStage(chapter.workflowStage ?? chapter.workflow_stage)}
-                  {' · '}
+                  {' / '}
                   {getWordCount(chapter).toLocaleString()} chars
-                  {' · '}
-                  {chapter.content ? 'has text' : 'empty'}
                 </span>
               </button>
             ))
           )}
         </div>
-      </form>
+      </div>
 
       <div className="generate-bar">
         {!isRunning ? (
@@ -366,10 +214,6 @@ export function CreationConsole({
       {status === 'done' && <div className="status-message success">Generation complete</div>}
     </div>
   )
-}
-
-function compareChapters(a: Chapter, b: Chapter) {
-  return getChapterNumber(a) - getChapterNumber(b)
 }
 
 function getChapterNumber(chapter: Chapter) {

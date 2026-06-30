@@ -27,6 +27,7 @@ const creationConsoleSource = await readFile(
   'utf8',
 )
 const sseHookSource = await readFile(resolve(currentDir, '../hooks/useSSE.ts'), 'utf8')
+const appSource = await readFile(resolve(currentDir, '../App.tsx'), 'utf8')
 const blueprintSources = `${apiSource}\n${ideaChatSource}`
 const outlineSources = `${apiSource}\n${outlineOptionsSource}`
 const memorySources = `${apiSource}\n${memoryChangeSetPanelSource}`
@@ -45,7 +46,7 @@ test('blueprint API calls stay behind the Java service boundary', () => {
 })
 
 test('idea kickoff component uses the frontend API client for the blueprint loop', () => {
-  assert.match(ideaChatSource, /createStory/)
+  assert.match(ideaChatSource, /getCurrentNovelBlueprint/)
   assert.match(ideaChatSource, /generateNovelBlueprint/)
   assert.match(ideaChatSource, /updateNovelBlueprint/)
   assert.match(ideaChatSource, /confirmNovelBlueprint/)
@@ -86,7 +87,11 @@ test('draft UI components use the frontend API client for generation records', (
   assert.match(generationHistorySource, /listChapterGenerations/)
   assert.match(generationHistorySource, /getChapterGeneration/)
   assert.match(generationHistorySource, /confirmChapterGeneration/)
+  assert.match(generationHistorySource, /lastAutoLoadKeyRef/)
   assert.match(sseHookSource, /generateChapterStream/)
+  assert.match(sseHookSource, /generation: data\.generation/)
+  assert.match(appSource, /mergeActiveGeneration\(selectedGeneration, state\.generation\)/)
+  assert.match(apiSource, /normalizeStreamDone/)
   assert.doesNotMatch(generationHistorySource, /\bfetch\s*\(/)
   assert.doesNotMatch(generationHistorySource, /\bEventSource\s*\(/)
   assert.doesNotMatch(sseHookSource, /\bEventSource\s*\(/)

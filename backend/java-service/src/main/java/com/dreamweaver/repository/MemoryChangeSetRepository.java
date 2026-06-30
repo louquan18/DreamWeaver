@@ -41,6 +41,11 @@ public interface MemoryChangeSetRepository extends JpaRepository<MemoryChangeSet
 
     List<MemoryChangeSet> findByStatusOrderByCreatedAtAsc(MemoryChangeSetStatus status);
 
+    List<MemoryChangeSet> findByStoryIdAndStatusOrderByCreatedAtAsc(
+        UUID storyId,
+        MemoryChangeSetStatus status
+    );
+
     boolean existsByStoryIdAndChapterIdAndStatus(
         UUID storyId,
         UUID chapterId,

@@ -20,6 +20,7 @@ import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.ChapterGeneration;
 import com.dreamweaver.entity.ChapterStatus;
 import com.dreamweaver.entity.ChapterWorkflowStage;
+import com.dreamweaver.service.AiDraftQualityClient;
 import com.dreamweaver.service.BadRequestException;
 import com.dreamweaver.service.ChapterGenerationService;
 import com.dreamweaver.service.ChapterService;
@@ -37,6 +38,7 @@ class ChapterGenerationControllerTests {
         ChapterGenerationController controller = new ChapterGenerationController(
             Mockito.mock(ChapterGenerationService.class),
             Mockito.mock(ChapterService.class),
+            Mockito.mock(AiDraftQualityClient.class),
             new ObjectMapper(),
             "http://python-ai:8000"
         );
@@ -65,6 +67,7 @@ class ChapterGenerationControllerTests {
         ChapterGenerationController controller = new ChapterGenerationController(
             Mockito.mock(ChapterGenerationService.class),
             Mockito.mock(ChapterService.class),
+            Mockito.mock(AiDraftQualityClient.class),
             new ObjectMapper(),
             "http://python-ai:8000"
         );
@@ -120,6 +123,7 @@ class ChapterGenerationControllerTests {
         ChapterGenerationController controller = new ChapterGenerationController(
             generationService,
             Mockito.mock(ChapterService.class),
+            Mockito.mock(AiDraftQualityClient.class),
             new ObjectMapper(),
             "http://python-ai:8000"
         );

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { generateChapterStream } from '../services/api'
-import type { GenerateRequest } from '../types'
+import type { ChapterGeneration, GenerateRequest } from '../types'
 
 export type WorkflowStatus = 'idle' | 'connecting' | 'generating' | 'done' | 'error'
 
@@ -36,6 +36,7 @@ export interface WorkflowState {
   tokenCharCount: number
   tokenPreview: string
   completionSeq: number
+  generation: ChapterGeneration | null
 }
 
 const MAX_AGENT_EVENTS = 20
@@ -102,6 +103,7 @@ export function useSSE() {
     tokenCharCount: 0,
     tokenPreview: '',
     completionSeq: 0,
+    generation: null,
   })
 
   const eventSourceRef = useRef<{ close: () => void } | null>(null)
@@ -146,6 +148,7 @@ export function useSSE() {
       tokenEventCount: 0,
       tokenCharCount: 0,
       tokenPreview: '',
+      generation: null,
     }))
 
     eventSourceRef.current = generateChapterStream(req, {
@@ -153,6 +156,7 @@ export function useSSE() {
         setState((prev) => ({
           ...prev,
           generationId: generation.id,
+          generation,
           agentEvents: appendAgentEvent(
             prev.agentEvents,
             createAgentEvent(
@@ -222,6 +226,15 @@ export function useSSE() {
           status: 'done',
           progress: 100,
           draft: prev.draft || data.draft || '',
+          errorMessage: '',
+          generation: data.generation
+            ? {
+                ...data.generation,
+                executionHistory: data.generation.executionHistory?.length
+                  ? data.generation.executionHistory
+                  : prev.executionHistory.map((node) => ({ node, status: 'succeeded' })),
+              }
+            : prev.generation,
           agentEvents: appendAgentEvent(
             prev.agentEvents,
             createAgentEvent(
@@ -275,6 +288,7 @@ export function useSSE() {
       tokenCharCount: 0,
       tokenPreview: '',
       completionSeq: 0,
+      generation: null,
     })
   }, [])
 

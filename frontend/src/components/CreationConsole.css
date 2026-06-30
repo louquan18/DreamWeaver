@@ -13,10 +13,21 @@
   margin-bottom: 16px;
 }
 
-.console-header h2 {
+.console-header h2,
+.console-header p {
   margin: 0;
+}
+
+.console-header h2 {
   font-size: 18px;
   font-weight: 700;
+}
+
+.console-header p {
+  color: #9ea8b8;
+  font-size: 12px;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
 }
 
 .console-header span {
@@ -117,6 +128,10 @@
   flex-direction: column;
   gap: 8px;
   padding-right: 2px;
+}
+
+.chapter-list.compact {
+  max-height: 260px;
 }
 
 .creation-console .chapter-row {

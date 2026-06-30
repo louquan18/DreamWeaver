@@ -5,19 +5,18 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
-import com.dreamweaver.dto.AiOutlineOptionsGenerateRequest;
-import com.dreamweaver.dto.AiOutlineOptionsGenerateResponse;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
-public class AiOutlineClient {
+public class AiDraftQualityClient {
 
     private static final String AI_VALIDATION_ERROR = "ai_validation_error";
     private static final String AI_WORKER_ERROR = "ai_worker_error";
@@ -25,14 +24,13 @@ public class AiOutlineClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
-    public AiOutlineClient(
+    public AiDraftQualityClient(
         @Value("${dreamweaver.python-ai.base-url}") String pythonAiBaseUrl,
-        @Value("${dreamweaver.python-ai.outline-read-timeout:300s}") Duration outlineReadTimeout,
         ObjectMapper objectMapper
     ) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(10));
-        requestFactory.setReadTimeout(outlineReadTimeout);
+        requestFactory.setReadTimeout(Duration.ofSeconds(120));
 
         this.restClient = RestClient.builder()
             .baseUrl(stripTrailingSlash(pythonAiBaseUrl))
@@ -41,21 +39,39 @@ public class AiOutlineClient {
         this.objectMapper = objectMapper;
     }
 
-    public AiOutlineOptionsGenerateResponse generateOutlineOptions(
+    public Map<String, Object> checkConsistency(
         UUID storyId,
         UUID chapterId,
-        AiOutlineOptionsGenerateRequest request
+        Map<String, Object> request
+    ) {
+        return postGate(storyId, chapterId, "/consistency", request);
+    }
+
+    public Map<String, Object> reviewQuality(
+        UUID storyId,
+        UUID chapterId,
+        Map<String, Object> request
+    ) {
+        return postGate(storyId, chapterId, "/review", request);
+    }
+
+    private Map<String, Object> postGate(
+        UUID storyId,
+        UUID chapterId,
+        String path,
+        Map<String, Object> request
     ) {
         try {
-            AiOutlineOptionsGenerateResponse response = restClient.post()
+            Map<String, Object> response = restClient.post()
                 .uri(
-                    "/internal/ai/stories/{storyId}/chapters/{chapterId}/outline-options/generate",
+                    "/internal/ai/stories/{storyId}/chapters/{chapterId}/drafts" + path,
                     storyId,
                     chapterId
                 )
                 .body(request)
                 .retrieve()
-                .body(AiOutlineOptionsGenerateResponse.class);
+                .body(new ParameterizedTypeReference<Map<String, Object>>() {
+                });
 
             if (response == null) {
                 throw new AiWorkerException(AI_WORKER_ERROR, "AI worker returned an empty response");
@@ -87,7 +103,8 @@ public class AiOutlineClient {
                 }
             );
             Object detail = payload.get("detail");
-            if (detail instanceof Map<?, ?> detailMap) {
+            if (detail instanceof Map<?, ?>) {
+                Map<?, ?> detailMap = (Map<?, ?>) detail;
                 Object message = detailMap.get("message");
                 if (message != null) {
                     return message.toString();

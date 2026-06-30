@@ -1,0 +1,149 @@
+.story-dialog-backdrop {
+  align-items: center;
+  background: rgba(4, 7, 13, 0.72);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 40;
+}
+
+.story-dialog {
+  background: #171927;
+  border: 1px solid #344154;
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  color: #e8ecf3;
+  max-width: 640px;
+  width: min(100%, 640px);
+}
+
+.story-dialog-header {
+  align-items: flex-start;
+  border-bottom: 1px solid #2a3042;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 18px;
+}
+
+.story-dialog-header span,
+.story-dialog-form label span {
+  color: #9ea8b8;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.story-dialog-header h2 {
+  color: #fff;
+  font-size: 20px;
+  margin: 4px 0 0;
+}
+
+.story-dialog-close {
+  background: #101522;
+  border: 1px solid #333b50;
+  border-radius: 6px;
+  color: #c9d3e2;
+  cursor: pointer;
+  font-weight: 800;
+  height: 34px;
+  width: 34px;
+}
+
+.story-dialog-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 18px;
+}
+
+.story-dialog-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.story-dialog-form .field-wide,
+.story-dialog-error,
+.story-dialog-actions {
+  grid-column: 1 / -1;
+}
+
+.story-dialog-form input,
+.story-dialog-form textarea {
+  background: #0f1220;
+  border: 1px solid #333b50;
+  border-radius: 6px;
+  color: #f5f7fb;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 11px 12px;
+  resize: vertical;
+}
+
+.story-dialog-form input:focus,
+.story-dialog-form textarea:focus {
+  border-color: #7aa2ff;
+  outline: none;
+}
+
+.story-dialog-error {
+  border: 1px solid rgba(209, 73, 91, 0.45);
+  border-radius: 6px;
+  color: #ff8c9a;
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.story-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.story-dialog-actions button {
+  background: #293244;
+  border: 1px solid #3a465f;
+  border-radius: 6px;
+  color: #d6dee9;
+  cursor: pointer;
+  font-weight: 800;
+  min-height: 40px;
+  padding: 0 14px;
+}
+
+.story-dialog-actions button.primary {
+  background: #2bb3a3;
+  border-color: #2bb3a3;
+  color: #07120f;
+}
+
+.story-dialog button:disabled,
+.story-dialog input:disabled,
+.story-dialog textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+@media (max-width: 620px) {
+  .story-dialog-backdrop {
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  .story-dialog {
+    overflow: auto;
+  }
+
+  .story-dialog-form {
+    grid-template-columns: 1fr;
+  }
+
+  .story-dialog-actions {
+    flex-direction: column;
+  }
+}

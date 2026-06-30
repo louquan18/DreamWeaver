@@ -22,6 +22,7 @@ const apiSource = sources['src/services/api.ts']
 const sseHookSource = sources['src/hooks/useSSE.ts']
 const creationConsoleSource = sources['src/components/CreationConsole.tsx']
 const livePreviewSource = sources['src/components/LivePreview.tsx']
+const generationHistorySource = sources['src/components/GenerationHistory.tsx']
 const outlineOptionsSource = sources['src/components/OutlineOptionsPanel.tsx']
 const memoryChangeSetSource = sources['src/components/MemoryChangeSetPanel.tsx']
 
@@ -32,8 +33,18 @@ test('workbench acceptance test is wired as an npm script', () => {
   )
 })
 
-test('App mounts the full workbench flow in the accepted left-center-right order', () => {
+test('App mounts the novel workspace shell with routed main and action panels', () => {
   assertInOrder(appSource, [
+    '<WorkspaceShell',
+    'sidebar={',
+    '<StoryWorkspaceSidebar',
+    'main={',
+    '<WorkspaceMain',
+    'actionRail={',
+    '<WorkspaceActionRail',
+  ])
+
+  for (const component of [
     '<NovelIdeaChat',
     '<CreationConsole',
     '<LivePreview',
@@ -41,11 +52,17 @@ test('App mounts the full workbench flow in the accepted left-center-right order
     '<GenerationHistory',
     '<OutlineOptionsPanel',
     '<MemoryChangeSetPanel',
-  ])
+    '<MemoryLibraryView',
+  ]) {
+    assert.match(appSource, new RegExp(component.replace('<', '<')))
+  }
 
-  assert.match(appSource, /className="workspace-sidebar"/)
-  assert.match(appSource, /className="workspace-editor"/)
-  assert.match(appSource, /className="workspace-rail"/)
+  assert.match(appSource, /activeView/)
+  assert.match(appSource, /getWorkspaceNavItem/)
+  assert.match(sources['src/components/WorkspaceShell.tsx'], /className="workspace-shell"/)
+  assert.match(sources['src/components/WorkspaceShell.tsx'], /className="story-workspace-slot"/)
+  assert.match(sources['src/components/WorkspaceShell.tsx'], /className="workspace-main-slot"/)
+  assert.match(sources['src/components/WorkspaceShell.tsx'], /className="workspace-action-slot"/)
 })
 
 test('frontend source never bypasses the Java boundary for AI/internal routes', () => {
@@ -93,10 +110,38 @@ test('P6 gate: draft confirmation is blocked on P0/blocking issues and tracks ad
   assert.match(livePreviewSource, /getConfirmationReadiness/)
   assert.match(livePreviewSource, /blockingCount > 0/)
   assert.match(livePreviewSource, /severity === 'P0'/)
+  assert.match(livePreviewSource, /ReportSummary/)
+  assert.match(livePreviewSource, /review_report/)
+  assert.match(livePreviewSource, /consistency_report/)
   assert.match(livePreviewSource, /generation\?\.adopted/)
   assert.match(livePreviewSource, /last_generation_id/)
   assert.match(appSource, /confirmChapterGeneration/)
   assert.match(appSource, /setDraftConfirming\(true\)/)
+})
+
+test('P6 gate: SSE done reports are visible before generation detail reloads', () => {
+  assert.match(apiSource, /normalizeStreamDone/)
+  assert.match(apiSource, /streamDone = true/)
+  assert.match(apiSource, /if \(closed \|\| streamDone \|\| eventSource\?\.readyState === EventSource\.CLOSED\) return/)
+  assert.match(apiSource, /await getChapterGeneration/)
+  assert.match(apiSource, /consistency_report/)
+  assert.match(apiSource, /review_report/)
+  assert.match(sseHookSource, /generation: data\.generation/)
+  assert.match(sseHookSource, /errorMessage: ''/)
+  assert.match(appSource, /mergeActiveGeneration\(selectedGeneration, state\.generation\)/)
+  assert.match(appSource, /streamedGeneration\.reviewReport/)
+  assert.match(appSource, /streamedGeneration\.consistencyReport/)
+  assert.match(livePreviewSource, /hasQualityReports/)
+  assert.match(livePreviewSource, /Waiting for quality reports/)
+  assert.match(livePreviewSource, /Quality reports have not been attached/)
+})
+
+test('P6 gate: refreshed chapter view restores persisted generation reports from Java detail', () => {
+  assert.match(appSource, /listChapterGenerations/)
+  assert.match(appSource, /getChapterGeneration/)
+  assert.match(appSource, /loadLatestGenerationDetail/)
+  assert.match(appSource, /generations\.find\(\(item\) => item\.status === 'succeeded'\)/)
+  assert.match(appSource, /setSelectedGeneration\(detail\)/)
 })
 
 test('P6 gate: memory confirmation covers conflicts, valid JSON, and final freeze', () => {
@@ -117,6 +162,8 @@ test('SSE event stream is created only through Java generation events', () => {
 
   assert.deepEqual(eventSourceUsers, ['src/services/api.ts'])
   assert.match(sseHookSource, /generateChapterStream/)
+  assert.match(generationHistorySource, /lastAutoLoadKeyRef/)
+  assert.match(generationHistorySource, /refreshKey/)
   assert.match(apiSource, /createChapterGeneration\(req\)/)
   assert.match(
     apiSource,

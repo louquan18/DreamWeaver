@@ -17,6 +17,8 @@ import type {
   MemoryChangeSetResult,
   MemoryChangeSetUpdateRequest,
   MemoryFreezeResult,
+  MemoryLibraryResponse,
+  MemoryLibraryType,
   NovelBlueprint,
   Story,
 } from '../types'
@@ -402,6 +404,23 @@ export async function listMemoryChangeSets(
   return res.json()
 }
 
+export async function listStoryMemories(
+  storyId: string,
+  type: MemoryLibraryType,
+): Promise<MemoryLibraryResponse> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/memories/${type}`)
+
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, `Failed to load ${type} memory`))
+  }
+
+  const raw = await res.json()
+  return {
+    raw,
+    items: normalizeMemoryItems(raw),
+  }
+}
+
 export async function getMemoryChangeSet(
   storyId: string,
   chapterId: string,
@@ -486,13 +505,14 @@ export function generateChapterStream(
     onToken?: (content: string) => void
     onNodeStart?: (node: string, progress: number) => void
     onNodeEnd?: (node: string, progress: number) => void
-    onDone?: (data: { story_id: string; chapter_id: string; draft?: string }) => void
+    onDone?: (data: GenerationStreamDone) => void
     onError?: (message: string) => void
     onCreated?: (generation: ChapterGeneration) => void
   },
 ): { close: () => void } {
   let eventSource: EventSource | null = null
   let closed = false
+  let streamDone = false
 
   createChapterGeneration(req)
     .then((generation) => {
@@ -518,14 +538,15 @@ export function generateChapterStream(
         callbacks.onNodeEnd?.(data.node, data.progress)
       })
 
-      eventSource.addEventListener('done', (e) => {
+      eventSource.addEventListener('done', async (e) => {
+        streamDone = true
         const data = JSON.parse(e.data)
-        callbacks.onDone?.(data)
         eventSource?.close()
+        callbacks.onDone?.(await normalizeStreamDone(data, generation))
       })
 
       eventSource.addEventListener('error', (e) => {
-        if (eventSource?.readyState === EventSource.CLOSED) return
+        if (closed || streamDone || eventSource?.readyState === EventSource.CLOSED) return
         const data = (e as MessageEvent).data
         callbacks.onError?.(data ? JSON.parse(data).message : 'Connection error')
         eventSource?.close()
@@ -541,6 +562,101 @@ export function generateChapterStream(
       eventSource?.close()
     },
   }
+}
+
+interface GenerationStreamDone {
+  story_id: string
+  chapter_id: string
+  generation_id?: string
+  draft?: string
+  word_count?: number
+  consistency_report?: Record<string, unknown>
+  review_report?: Record<string, unknown>
+  consistencyReport?: Record<string, unknown>
+  reviewReport?: Record<string, unknown>
+  generation?: ChapterGeneration
+}
+
+async function normalizeStreamDone(
+  data: GenerationStreamDone,
+  generation: ChapterGeneration,
+): Promise<GenerationStreamDone> {
+  const streamedGeneration = isChapterGenerationLike(data.generation) ? data.generation : undefined
+  let detailGeneration: ChapterGeneration | undefined
+  let consistencyReport = findConsistencyReport(data, streamedGeneration, generation)
+  let reviewReport = findReviewReport(data, streamedGeneration, generation)
+  const generationId = data.generation_id || generation.id
+
+  if ((!consistencyReport || !reviewReport) && generationId) {
+    const storyId = generation.storyId || data.story_id
+    const chapterId = generation.chapterId || data.chapter_id
+    try {
+      detailGeneration = await getChapterGeneration(storyId, chapterId, generationId)
+      consistencyReport = consistencyReport || findConsistencyReport({}, detailGeneration)
+      reviewReport = reviewReport || findReviewReport({}, detailGeneration)
+    } catch {
+      // Keep the streamed payload visible even when the detail refresh is not available yet.
+    }
+  }
+
+  const mergedGeneration = {
+    ...generation,
+    ...streamedGeneration,
+    ...detailGeneration,
+  }
+  const draft = data.draft ?? mergedGeneration.draft ?? ''
+  const wordCount = data.word_count ?? mergedGeneration.wordCount ?? draft.length
+
+  return {
+    ...data,
+    generation_id: generationId,
+    consistencyReport,
+    reviewReport,
+    generation: {
+      ...mergedGeneration,
+      status: 'succeeded',
+      draft,
+      wordCount,
+      consistencyReport,
+      consistency_report: consistencyReport,
+      reviewReport,
+      review_report: reviewReport,
+    },
+  }
+}
+
+function findConsistencyReport(
+  data: Partial<GenerationStreamDone>,
+  ...generations: Array<ChapterGeneration | undefined>
+) {
+  return (
+    recordOrUndefined(data.consistencyReport)
+    || recordOrUndefined(data.consistency_report)
+    || generations.map((item) => (
+      recordOrUndefined(item?.consistencyReport) || recordOrUndefined(item?.consistency_report)
+    )).find(Boolean)
+  )
+}
+
+function findReviewReport(
+  data: Partial<GenerationStreamDone>,
+  ...generations: Array<ChapterGeneration | undefined>
+) {
+  return (
+    recordOrUndefined(data.reviewReport)
+    || recordOrUndefined(data.review_report)
+    || generations.map((item) => (
+      recordOrUndefined(item?.reviewReport) || recordOrUndefined(item?.review_report)
+    )).find(Boolean)
+  )
+}
+
+function isChapterGenerationLike(value: unknown): value is ChapterGeneration {
+  return isRecord(value) && typeof value.id === 'string'
+}
+
+function recordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
 }
 
 function normalizeMemoryChangeSetResult(data: unknown): MemoryChangeSetResult {
@@ -573,6 +689,18 @@ function normalizeMemoryFreezeResult(data: unknown): MemoryFreezeResult {
   }
 
   return data as MemoryFreezeResult
+}
+
+function normalizeMemoryItems(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data
+  if (!isRecord(data)) return []
+
+  for (const key of ['items', 'memories', 'data', 'results', 'records']) {
+    const value = data[key]
+    if (Array.isArray(value)) return value
+  }
+
+  return []
 }
 
 function isChapterLike(value: unknown): value is Chapter {

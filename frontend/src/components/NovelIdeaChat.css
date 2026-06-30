@@ -65,6 +65,36 @@
   margin-top: 16px;
 }
 
+.idea-chat-empty {
+  background: #0f1420;
+  border: 1px dashed #344154;
+  border-radius: 8px;
+  color: #a9b8ce;
+  line-height: 1.6;
+  margin-top: 16px;
+  padding: 16px;
+}
+
+.idea-chat-empty strong {
+  color: #fff;
+  display: block;
+  font-size: 15px;
+  margin-bottom: 5px;
+}
+
+.idea-chat-empty p {
+  font-size: 13px;
+  margin: 0;
+}
+
+.idea-chat-empty button {
+  background: #2bb3a3;
+  color: #07120f;
+  margin-top: 12px;
+  min-height: 38px;
+  padding: 0 12px;
+}
+
 .idea-chat-form label {
   color: #a9b8ce;
   font-size: 12px;

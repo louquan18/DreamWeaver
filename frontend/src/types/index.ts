@@ -83,7 +83,9 @@ export interface ChapterGeneration {
   modelName?: string
   executionHistory?: Array<Record<string, unknown>>
   consistencyReport?: Record<string, unknown>
+  consistency_report?: Record<string, unknown>
   reviewReport?: Record<string, unknown>
+  review_report?: Record<string, unknown>
   repairReport?: Record<string, unknown>
   repairResult?: Record<string, unknown>
   autoRepairResult?: Record<string, unknown>
@@ -287,6 +289,13 @@ export interface ChapterOutlineOptionsGenerateResult {
 
 export type MemoryChangeType = 'timeline' | 'character' | 'world' | 'foreshadow' | 'conflicts'
 
+export type MemoryLibraryType = 'characters' | 'foreshadows' | 'world' | 'timeline'
+
+export interface MemoryLibraryResponse {
+  items: unknown[]
+  raw: unknown
+}
+
 export type MemoryChange = Record<string, unknown>
 
 export interface MemoryChangeSet {
@@ -343,4 +352,15 @@ export interface MemoryFreezeResult {
   chapter: Chapter
   memoryChangeSet: MemoryChangeSet
   memory_change_set?: MemoryChangeSet
+}
+
+export type StoryMemoryType = 'characters' | 'foreshadows' | 'world' | 'timeline'
+
+export interface StoryMemoryLibrary {
+  storyId?: string
+  story_id?: string
+  type: StoryMemoryType | string
+  items: Array<Record<string, unknown>>
+  count?: number
+  fingerprint?: Record<string, unknown>
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   confirmChapterGeneration,
   getChapterGeneration,
@@ -11,6 +11,7 @@ interface GenerationHistoryProps {
   storyId?: string
   chapterId?: string
   refreshKey: number
+  autoSelectGenerationId?: string
   onGenerationSelected: (generation: ChapterGeneration | null) => void
   onConfirmed: (chapter: Chapter) => void
 }
@@ -19,6 +20,7 @@ export function GenerationHistory({
   storyId,
   chapterId,
   refreshKey,
+  autoSelectGenerationId,
   onGenerationSelected,
   onConfirmed,
 }: GenerationHistoryProps) {
@@ -28,6 +30,7 @@ export function GenerationHistory({
   const [loading, setLoading] = useState(false)
   const [confirmingId, setConfirmingId] = useState('')
   const [error, setError] = useState('')
+  const lastAutoLoadKeyRef = useRef('')
 
   const selectedSummary = useMemo(
     () => items.find((item) => item.id === selectedId),
@@ -95,6 +98,16 @@ export function GenerationHistory({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadHistory()
   }, [loadHistory, refreshKey])
+
+  // 生成完成后自动选中该 generation 并拉取详情（详情接口带一致性/review 报告）
+  useEffect(() => {
+    if (!storyId || !chapterId) return
+    if (!autoSelectGenerationId) return
+    const autoLoadKey = `${storyId}:${chapterId}:${autoSelectGenerationId}:${refreshKey}`
+    if (lastAutoLoadKeyRef.current === autoLoadKey) return
+    lastAutoLoadKeyRef.current = autoLoadKey
+    void loadDetail(autoSelectGenerationId)
+  }, [autoSelectGenerationId, chapterId, loadDetail, refreshKey, storyId])
 
   return (
     <div className="generation-history">

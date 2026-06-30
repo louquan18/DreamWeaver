@@ -33,6 +33,7 @@ import com.dreamweaver.dto.ChapterGenerationSummaryResponse;
 import com.dreamweaver.dto.ChapterResponse;
 import com.dreamweaver.entity.Chapter;
 import com.dreamweaver.entity.ChapterGeneration;
+import com.dreamweaver.service.AiDraftQualityClient;
 import com.dreamweaver.service.ChapterGenerationService;
 import com.dreamweaver.service.ChapterService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -47,17 +48,20 @@ public class ChapterGenerationController {
 
     private final ChapterGenerationService generationService;
     private final ChapterService chapterService;
+    private final AiDraftQualityClient aiDraftQualityClient;
     private final ObjectMapper objectMapper;
     private final String pythonAiBaseUrl;
 
     public ChapterGenerationController(
         ChapterGenerationService generationService,
         ChapterService chapterService,
+        AiDraftQualityClient aiDraftQualityClient,
         ObjectMapper objectMapper,
         @Value("${dreamweaver.python-ai.base-url}") String pythonAiBaseUrl
     ) {
         this.generationService = generationService;
         this.chapterService = chapterService;
+        this.aiDraftQualityClient = aiDraftQualityClient;
         this.objectMapper = objectMapper;
         this.pythonAiBaseUrl = pythonAiBaseUrl;
     }
@@ -149,6 +153,7 @@ public class ChapterGenerationController {
         List<Map<String, Object>> executionHistory = new ArrayList<>();
         String currentEvent = null;
         StringBuilder dataBuffer = new StringBuilder();
+        List<String> eventLines = new ArrayList<>();
 
         HttpURLConnection connection = null;
         try {
@@ -175,16 +180,33 @@ public class ChapterGenerationController {
             )) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    writeSseLine(outputStream, line);
+                    if (line.startsWith(":") && currentEvent == null) {
+                        writeSseLine(outputStream, line);
+                        continue;
+                    }
+                    eventLines.add(line);
 
                     if (line.startsWith("event:")) {
                         currentEvent = line.substring("event:".length()).trim();
                     } else if (line.startsWith("data:")) {
                         dataBuffer.append(line.substring("data:".length()).trim());
                     } else if (line.isBlank() && currentEvent != null) {
-                        handlePythonEvent(generation, currentEvent, dataBuffer.toString(), executionHistory);
+                        boolean forwardOriginal = handlePythonEvent(
+                            outputStream,
+                            generation,
+                            currentEvent,
+                            dataBuffer.toString(),
+                            executionHistory
+                        );
+                        if (forwardOriginal) {
+                            writeSseLines(outputStream, eventLines);
+                        }
                         currentEvent = null;
                         dataBuffer.setLength(0);
+                        eventLines.clear();
+                    } else if (line.isBlank()) {
+                        writeSseLines(outputStream, eventLines);
+                        eventLines.clear();
                     }
                 }
             }
@@ -229,20 +251,21 @@ public class ChapterGenerationController {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> mapValue(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
+        if (value instanceof Map<?, ?>) {
+            return (Map<String, Object>) value;
         }
         return Map.of();
     }
 
-    private void handlePythonEvent(
+    private boolean handlePythonEvent(
+        OutputStream outputStream,
         ChapterGeneration generation,
         String event,
         String data,
         List<Map<String, Object>> executionHistory
     ) throws IOException {
         if (data == null || data.isBlank()) {
-            return;
+            return true;
         }
 
         Map<String, Object> payload = objectMapper.readValue(
@@ -259,14 +282,8 @@ public class ChapterGenerationController {
         } else if ("done".equals(event)) {
             String draft = asString(payload.get("draft"));
             Integer wordCount = asInteger(payload.get("word_count"));
-            generationService.completeFromStream(
-                generation.getStoryId(),
-                generation.getChapterId(),
-                generation.getId(),
-                draft,
-                wordCount,
-                executionHistory
-            );
+            runQualityGatesAndComplete(outputStream, generation, draft, wordCount, executionHistory);
+            return false;
         } else if ("error".equals(event)) {
             generationService.failFromStream(
                 generation.getStoryId(),
@@ -275,6 +292,156 @@ public class ChapterGenerationController {
                 asString(payload.get("message"))
             );
         }
+        return true;
+    }
+
+    private void runQualityGatesAndComplete(
+        OutputStream outputStream,
+        ChapterGeneration generation,
+        String draft,
+        Integer wordCount,
+        List<Map<String, Object>> executionHistory
+    ) throws IOException {
+        generationService.markReviewing(
+            generation.getStoryId(),
+            generation.getChapterId(),
+            generation.getId()
+        );
+
+        Map<String, Object> gateRequest = pythonDraftGateRequest(generation, draft);
+
+        yieldSse(outputStream, "node_start", Map.of("node", "check_consistency", "progress", 70));
+        Map<String, Object> consistencyReport;
+        try {
+            consistencyReport = aiDraftQualityClient.checkConsistency(
+                generation.getStoryId(),
+                generation.getChapterId(),
+                gateRequest
+            );
+        } catch (RuntimeException ex) {
+            consistencyReport = gateErrorReport("consistency", ex);
+        }
+        executionHistory.add(historyItem("check_consistency", consistencyReport));
+        yieldSse(
+            outputStream,
+            "node_end",
+            Map.of(
+                "node", "check_consistency",
+                "progress", 70,
+                "issues", issueCount(consistencyReport),
+                "blocking", Boolean.TRUE.equals(consistencyReport.get("blocking"))
+            )
+        );
+
+        yieldSse(outputStream, "node_start", Map.of("node", "review", "progress", 80));
+        Map<String, Object> reviewReport;
+        try {
+            reviewReport = aiDraftQualityClient.reviewQuality(
+                generation.getStoryId(),
+                generation.getChapterId(),
+                gateRequest
+            );
+        } catch (RuntimeException ex) {
+            reviewReport = gateErrorReport("review", ex);
+        }
+        executionHistory.add(historyItem("review", reviewReport));
+        yieldSse(
+            outputStream,
+            "node_end",
+            Map.of(
+                "node", "review",
+                "progress", 80,
+                "issues", issueCount(reviewReport),
+                "blocking", Boolean.TRUE.equals(reviewReport.get("blocking"))
+            )
+        );
+
+        generationService.completeFromStream(
+            generation.getStoryId(),
+            generation.getChapterId(),
+            generation.getId(),
+            draft,
+            wordCount,
+            executionHistory,
+            consistencyReport,
+            reviewReport
+        );
+
+        Map<String, Object> donePayload = new LinkedHashMap<>();
+        donePayload.put("story_id", generation.getStoryId());
+        donePayload.put("chapter_id", generation.getChapterId());
+        donePayload.put("saved_chapter_id", null);
+        donePayload.put("draft", draft == null ? "" : draft);
+        donePayload.put("word_count", wordCount == null ? 0 : wordCount);
+        donePayload.put("consistency_report", consistencyReport);
+        donePayload.put("review_report", reviewReport);
+        yieldSse(outputStream, "done", donePayload);
+    }
+
+    private Map<String, Object> pythonDraftGateRequest(ChapterGeneration generation, String draft) {
+        Map<String, Object> request = generation.getRequest();
+        Map<String, Object> writingContext = mapValue(request.get("writing_context"));
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("generationId", generation.getId().toString());
+        payload.put("story", writingContext.getOrDefault("story", Map.of()));
+        payload.put("chapter", writingContext.getOrDefault("chapter", Map.of()));
+        payload.put("blueprint", writingContext.getOrDefault("blueprint", Map.of()));
+        payload.put("confirmedOutline", writingContext.getOrDefault("confirmedOutline", Map.of()));
+        payload.put("recentChapters", writingContext.getOrDefault("recentChapters", List.of()));
+        payload.put("activeForeshadows", writingContext.getOrDefault("foreshadows", List.of()));
+        payload.put("timeline", writingContext.getOrDefault("timeline", List.of()));
+        payload.put("characters", writingContext.getOrDefault("characters", List.of()));
+        payload.put("worldState", writingContext.getOrDefault("world", List.of()));
+        payload.put("draft", draft == null ? "" : draft);
+        payload.put("extraPrompt", request.get("extra_prompt"));
+        payload.put("targetWords", request.get("target_words"));
+        return payload;
+    }
+
+    private Map<String, Object> historyItem(String node, Map<String, Object> report) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("node", node);
+        item.put("status", "succeeded");
+        item.put("issues", issueCount(report));
+        item.put("blocking", Boolean.TRUE.equals(report.get("blocking")));
+        if (report.get("overallScore") != null) {
+            item.put("overallScore", report.get("overallScore"));
+        }
+        return item;
+    }
+
+    private Map<String, Object> gateErrorReport(String source, RuntimeException ex) {
+        Map<String, Object> issue = new LinkedHashMap<>();
+        issue.put("severity", "P0");
+        issue.put("message", "Draft " + source + " gate failed");
+        issue.put("evidence", ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+        issue.put("suggestion", "Retry generation or review the AI worker error before confirming this draft.");
+        issue.put("blocking", true);
+        issue.put("autoRepairRequired", false);
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("summary", "Draft " + source + " gate failed and blocks confirmation.");
+        report.put("issues", List.of(issue));
+        report.put("blocking", true);
+        report.put("autoRepairRequired", false);
+        if ("review".equals(source)) {
+            issue.put("category", "continuity");
+            report.put("overallScore", 0);
+            report.put("revisionHints", List.of("Resolve the review gate error before confirming."));
+            report.put("strengths", List.of());
+        } else {
+            issue.put("domain", "timeline");
+            issue.put("ruleId", "GATE_ERROR");
+            report.put("checkedRuleIds", List.of());
+            report.put("passedRuleIds", List.of());
+        }
+        return report;
+    }
+
+    private int issueCount(Map<String, Object> report) {
+        Object issues = report == null ? null : report.get("issues");
+        return issues instanceof List<?> ? ((List<?>) issues).size() : 0;
     }
 
     private void writeSseLine(OutputStream outputStream, String line) throws IOException {
@@ -282,6 +449,17 @@ public class ChapterGenerationController {
         if (line.isBlank()) {
             outputStream.flush();
         }
+    }
+
+    private void writeSseLines(OutputStream outputStream, List<String> lines) throws IOException {
+        for (String line : lines) {
+            writeSseLine(outputStream, line);
+        }
+    }
+
+    private void yieldSse(OutputStream outputStream, String event, Map<String, Object> payload) throws IOException {
+        outputStream.write(_sse(event, payload).getBytes(StandardCharsets.UTF_8));
+        outputStream.flush();
     }
 
     private void writeJavaError(OutputStream outputStream, String message) throws IOException {
@@ -297,13 +475,17 @@ public class ChapterGenerationController {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    private String _sse(String event, Map<String, Object> data) throws IOException {
+        return "event: " + event + "\ndata: " + objectMapper.writeValueAsString(data) + "\n\n";
+    }
+
     private String asString(Object value) {
         return value == null ? null : value.toString();
     }
 
     private Integer asInteger(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
         }
         if (value == null) {
             return null;

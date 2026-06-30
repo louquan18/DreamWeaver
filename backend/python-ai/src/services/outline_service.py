@@ -14,6 +14,7 @@ from src.services.outline_context import build_outline_options_context
 from src.services.outline_prompt import OutlineOptionsPromptContext, build_outline_options_prompt
 
 LLMInvoker = Callable[[list[dict[str, str]]], Awaitable[str]]
+MAX_ACTIVE_FORESHADOWS_FOR_PLANT = 10
 
 
 class OutlineGenerationError(RuntimeError):
@@ -99,6 +100,18 @@ def _validate_c_foreshadow_fallback(
         for item in context.existing_foreshadows
         if isinstance(item, dict) and item.get("id")
     }
+    urgent_ids = {
+        str(item.get("id")).strip()
+        for item in context.existing_foreshadows
+        if isinstance(item, dict)
+        and item.get("id")
+        and (
+            item.get("needsAttention") is True
+            or item.get("needs_attention") is True
+            or item.get("attentionStatus") == "overdue"
+            or item.get("attention_status") == "overdue"
+        )
+    }
     recover_or_strengthen = {"resolve", "trigger", "strengthen"}
     planted_actions = [action for action in actions if action.action == "plant"]
     missing_required_ids = [
@@ -120,6 +133,7 @@ def _validate_c_foreshadow_fallback(
         and action.foreshadow_id
         and action.foreshadow_id in existing_ids
     ]
+    referenced_existing_ids = {action.foreshadow_id for action in referenced_existing}
     missing_references = [
         action.foreshadow_id
         for action in actions
@@ -130,11 +144,25 @@ def _validate_c_foreshadow_fallback(
         raise OutlineGenerationError(f"C option references unknown foreshadowId: {missing}")
 
     if existing_ids:
-        if planted_actions:
+        if planted_actions and len(existing_ids) >= MAX_ACTIVE_FORESHADOWS_FOR_PLANT:
             raise OutlineGenerationError(
-                "C option cannot plant a new foreshadow while existing foreshadows are available"
+                "C option cannot plant a new foreshadow because the active "
+                f"foreshadow budget is full ({MAX_ACTIVE_FORESHADOWS_FOR_PLANT})"
+            )
+        if urgent_ids and not (urgent_ids & referenced_existing_ids):
+            urgent = ", ".join(sorted(urgent_ids))
+            raise OutlineGenerationError(
+                "C option must resolve, trigger, or strengthen an urgent existing "
+                f"foreshadow before planting a new one: {urgent}"
+            )
+        if planted_actions and not c_option.risk_notes:
+            raise OutlineGenerationError(
+                "C option riskNotes must explain why existing foreshadows are not "
+                "resolved, triggered, or strengthened before planting a new one"
             )
         if referenced_existing:
+            return
+        if planted_actions:
             return
         raise OutlineGenerationError(
             "C option must resolve, trigger, or strengthen an existing foreshadow "
@@ -215,7 +243,10 @@ def _infer_characters_involved(
                 "name": name,
                 "role": _infer_character_role(name, context),
                 "motivation": _infer_character_motivation(name, context),
-                "stateChange": "Participates in the chapter beats established by the generated scene outline.",
+                "stateChange": (
+                    "Participates in the chapter beats established by the generated "
+                    "scene outline."
+                ),
             }
         )
     return repaired
@@ -311,6 +342,7 @@ async def _invoke_llm(messages: list[dict[str, str]], llm: Any | LLMInvoker | No
             models=agent_model_chain("outline"),
             max_tokens=8192,
             temperature=agent_temperature("outline"),
+            model_extra_body=_outline_model_extra_body,
         ):
             content += token
         return content
@@ -343,6 +375,12 @@ def _parse_json_object(content: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise OutlineGenerationError("LLM JSON response must be an object")
     return payload
+
+
+def _outline_model_extra_body(model: str) -> dict[str, Any] | None:
+    if "deepseek" not in model.lower():
+        return None
+    return {"thinking": {"type": "disabled"}}
 
 
 def _format_schema_errors(exc: ValidationError) -> str:

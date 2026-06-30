@@ -36,3 +36,4 @@ management:
 dreamweaver:
   python-ai:
     base-url: ${PYTHON_AI_BASE_URL:http://localhost:8000}
+    outline-read-timeout: ${PYTHON_AI_OUTLINE_READ_TIMEOUT:300s}
